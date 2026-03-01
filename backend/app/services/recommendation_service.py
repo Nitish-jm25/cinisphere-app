@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 from ml_engine.serving.hybrid_ranker import get_hybrid_recommendations
-from ml_engine.serving.diversity_reranker import rerank_with_diversity
+from ml_engine.serving.diversity_reranker import rerank_for_diversity
 
 def generate_recommendations(user_text: str, top_k: int = 20):
 
@@ -11,7 +11,7 @@ def generate_recommendations(user_text: str, top_k: int = 20):
         top_k=50  # extra before diversity
     )
 
-    diversified = rerank_with_diversity(
+    diversified = rerank_for_diversity(
         ranked_ids,
         top_k=top_k
     )

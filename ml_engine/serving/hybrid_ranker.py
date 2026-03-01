@@ -8,8 +8,8 @@ import time
 
 import numpy as np
 
-from content_recommender import compute_user_vector_from_text, compute_all_content_scores
-from popularity_engine import popularity_scores, freshness_scores
+from .content_recommender import compute_user_vector_from_text, compute_all_content_scores
+from .popularity_engine import popularity_scores, freshness_scores
 
 # ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(
