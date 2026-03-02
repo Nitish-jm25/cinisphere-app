@@ -53,7 +53,7 @@ export const Onboarding = () => {
             setStep(prev => prev + 1);
         } else {
             // Finish onboarding
-            navigate('/home');
+            navigate('/discover');
         }
     };
 
