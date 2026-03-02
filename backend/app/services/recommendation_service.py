@@ -1,19 +1,58 @@
-import sys
-from pathlib import Path
+from pymongo import MongoClient
+from fastapi import HTTPException
+from app.core.dependencies import ml_service
 
-from ml_engine.serving.hybrid_ranker import get_hybrid_recommendations
-from ml_engine.serving.diversity_reranker import rerank_for_diversity
+# ─── MongoDB Configuration ─────────────────────────────────────
+MONGO_URI = "mongodb://localhost:27017/"
+DB_NAME = "movie_recommendation_db"
+COLLECTION_NAME = "movies"
 
-def generate_recommendations(user_text: str, top_k: int = 20):
+client = MongoClient(MONGO_URI)
+db = client[DB_NAME]
+movies_collection = db[COLLECTION_NAME]
 
-    ranked_ids = get_hybrid_recommendations(
-        user_text=user_text,
-        top_k=50  # extra before diversity
-    )
 
-    diversified = rerank_for_diversity(
-        ranked_ids,
-        top_k=top_k
-    )
+# ─── Recommendation Service ────────────────────────────────────
+def generate_recommendations(user_text: str, top_k: int = 20) -> list[dict]:
+    try:
+        # Step 1 — Use MLService (hybrid + diversity encapsulated)
+        diversified_ids: list[int] = ml_service.recommend(
+            user_text=user_text,
+            top_k=top_k
+        )
 
-    return diversified
+        if not diversified_ids:
+            return []
+
+        diversified_ids = [int(mid) for mid in diversified_ids]
+
+        # Step 2 — Fetch metadata from Mongo
+        movies = list(
+            movies_collection.find(
+                {"movie_id": {"$in": diversified_ids}},
+                {
+                    "_id": 0,
+                    "movie_id": 1,
+                    "title": 1,
+                    "poster_path": 1,
+                    "overview": 1,
+                    "vote_average": 1,
+                    "release_date": 1,
+                    "genres": 1,
+                    "popularity": 1,
+                },
+            )
+        )
+
+        # Step 3 — Preserve ranking order (O(1) lookup)
+        rank_map = {mid: idx for idx, mid in enumerate(diversified_ids)}
+
+        movies_sorted = sorted(
+            movies,
+            key=lambda x: rank_map.get(x["movie_id"], 9999),
+        )
+
+        return movies_sorted
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -11,9 +11,11 @@ router = APIRouter()
 @router.post("/recommend", response_model=RecommendationResponse)
 def recommend_movies(request: RecommendationRequest):
 
-    results = generate_recommendations(
+    movies = generate_recommendations(
         user_text=request.user_text,
         top_k=request.top_k
     )
 
-    return RecommendationResponse(recommendations=results)
+    return {
+        "recommendations": movies
+    }
