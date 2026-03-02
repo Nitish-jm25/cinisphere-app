@@ -7,7 +7,7 @@ export const Navbar = () => {
     const location = useLocation();
 
     const navItems = [
-        { label: 'Home', path: '/home', icon: <Compass className="w-5 h-5" /> },
+        { label: 'Discover', path: '/discover', icon: <Compass className="w-5 h-5" /> },
         { label: 'Feed', path: '/feed', icon: <Film className="w-5 h-5" /> },
         { label: 'Community', path: '/community', icon: <Users className="w-5 h-5" /> },
         { label: 'Profile', path: '/profile', icon: <User className="w-5 h-5" /> },

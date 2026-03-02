@@ -19,7 +19,7 @@ function App() {
           <Route path="/onboarding" element={<Onboarding />} />
 
           <Route element={<RootLayout />}>
-            <Route path="/home" element={<Home />} />
+            <Route path="/discover" element={<Home />} />
             <Route path="/movie/:id" element={<MovieDetail />} />
             <Route path="/feed" element={<CommunityFeed />} />
             <Route path="/community" element={<Communities />} />

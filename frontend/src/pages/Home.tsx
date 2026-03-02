@@ -7,9 +7,11 @@ import { UserRow } from '../components/community/UserRow';
 import { useAppContext } from '../context/AppContext';
 import { dataService } from '../services/mockData';
 import type { User } from '../services/mockData';
+import { MoodSurveyModal } from '../components/surveys/MoodSurveyModal';
 
 export const Home = () => {
     const { onboardingData } = useAppContext();
+    const [isSurveyOpen, setIsSurveyOpen] = useState(false);
 
     const [heroMovie, setHeroMovie] = useState<Movie | undefined>();
     const [trending, setTrending] = useState<Movie[]>([]);
@@ -62,6 +64,15 @@ export const Home = () => {
         };
 
         fetchHomeData();
+
+        // Check if user has already completed the survey this session
+        const hasCompletedSurvey = sessionStorage.getItem('hasCompletedMoodSurvey');
+        if (!hasCompletedSurvey) {
+            // Slight delay so the user sees the page load before the modal pops up
+            setTimeout(() => {
+                setIsSurveyOpen(true);
+            }, 1000);
+        }
     }, []);
 
     useEffect(() => {
@@ -81,6 +92,11 @@ export const Home = () => {
 
     return (
         <div className="min-h-screen bg-background pb-20">
+            <MoodSurveyModal
+                isOpen={isSurveyOpen}
+                onClose={() => setIsSurveyOpen(false)}
+            />
+
             <HeroBanner movie={heroMovie} loading={loading} />
 
             <div className="relative z-20 -mt-12 space-y-12 pb-12 max-w-7xl mx-auto w-full">

@@ -52,7 +52,7 @@ export const Landing = () => {
 
     const finishSurvey = () => {
         setShowSurvey(false);
-        navigate('/home');
+        navigate('/discover');
     };
 
     const handleAuthSuccess = (mode: 'signin' | 'signup') => {
@@ -60,7 +60,7 @@ export const Landing = () => {
         if (mode === 'signup') {
             setShowSurvey(true);
         } else {
-            navigate('/home');
+            navigate('/discover');
         }
     };
 
