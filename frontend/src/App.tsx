@@ -9,6 +9,7 @@ import { MovieDetail } from './pages/MovieDetail';
 import { CommunityFeed } from './pages/CommunityFeed';
 import { Communities } from './pages/Communities';
 import { Profile } from './pages/Profile';
+import { TailorFit } from './pages/TailorFit';
 
 function App() {
   return (
@@ -20,6 +21,8 @@ function App() {
 
           <Route element={<RootLayout />}>
             <Route path="/discover" element={<Home />} />
+            <Route path="/home" element={<Home />} />
+            <Route path="/tailor-fit" element={<TailorFit />} />
             <Route path="/movie/:id" element={<MovieDetail />} />
             <Route path="/feed" element={<CommunityFeed />} />
             <Route path="/community" element={<Communities />} />

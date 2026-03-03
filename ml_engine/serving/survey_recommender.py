@@ -14,6 +14,7 @@ Collection: movies
 """
 
 import sys
+import os
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -21,17 +22,26 @@ from pymongo import MongoClient
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from user_manager import (
-    create_user,
-    get_user_by_email,
-    save_user_profile,
-    get_user_profile,
-    save_user_history,
-)
+try:
+    from .user_manager import (
+        create_user,
+        get_user_by_email,
+        save_user_profile,
+        get_user_profile,
+        save_user_history,
+    )
+except ImportError:
+    from user_manager import (
+        create_user,
+        get_user_by_email,
+        save_user_profile,
+        get_user_profile,
+        save_user_history,
+    )
 
 # ─── Configuration ────────────────────────────────────────────
-MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "movie_recommendation_db"
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+DB_NAME = os.getenv("DATABASE_NAME") or os.getenv("DB_NAME") or "movie_recommendation_db"
 COLLECTION_NAME = "movies"
 TOP_N = 15
 

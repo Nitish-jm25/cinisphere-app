@@ -1,5 +1,4 @@
-export const TMDB_API_KEY = 'a34f025d8c73de52051bf6421b42ec07';
-export const BASE_URL = 'https://api.themoviedb.org/3';
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '');
 
 export interface Movie {
     id: number;
@@ -87,56 +86,56 @@ export const MOCK_GENRES: Record<number, string> = {
 
 export const tmdbService = {
     getConfig: async () => {
-        const response = await fetch(`${BASE_URL}/configuration?api_key=${TMDB_API_KEY}`);
+        const response = await fetch(`${API_BASE_URL}/tmdb/configuration`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     },
 
     getTrendingMovies: async (): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${BASE_URL}/trending/movie/week?api_key=${TMDB_API_KEY}`);
+        const response = await fetch(`${API_BASE_URL}/tmdb/trending`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     },
 
     getRecommendedMovies: async (): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${BASE_URL}/movie/top_rated?api_key=${TMDB_API_KEY}`);
+        const response = await fetch(`${API_BASE_URL}/tmdb/top-rated`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     },
 
     getUpcomingMovies: async (): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${BASE_URL}/movie/upcoming?api_key=${TMDB_API_KEY}`);
+        const response = await fetch(`${API_BASE_URL}/tmdb/upcoming`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     },
 
     getMoodPicks: async (): Promise<{ results: Movie[] }> => {
         // Fetch popular movies as a proxy for mood picks for now
-        const response = await fetch(`${BASE_URL}/movie/popular?api_key=${TMDB_API_KEY}`);
+        const response = await fetch(`${API_BASE_URL}/tmdb/popular`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     },
 
     getTamilMovies: async (): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_original_language=ta&sort_by=popularity.desc`);
+        const response = await fetch(`${API_BASE_URL}/tmdb/discover/tamil`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     },
 
     getMovieDetails: async (id: string): Promise<Movie> => {
-        const response = await fetch(`${BASE_URL}/movie/${id}?api_key=${TMDB_API_KEY}&append_to_response=videos,images`);
+        const response = await fetch(`${API_BASE_URL}/tmdb/movie/${id}`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     },
 
     searchMovies: async (query: string): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&include_adult=false`);
+        const response = await fetch(`${API_BASE_URL}/tmdb/search?query=${encodeURIComponent(query)}`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     },
 
     getMovieCredits: async (id: number): Promise<MovieCredits> => {
-        const response = await fetch(`${BASE_URL}/movie/${id}/credits?api_key=${TMDB_API_KEY}`);
+        const response = await fetch(`${API_BASE_URL}/tmdb/movie/${id}/credits`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     }

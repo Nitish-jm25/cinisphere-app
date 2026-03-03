@@ -9,6 +9,7 @@ Collections: users, user_profiles, user_history
 """
 
 from datetime import datetime, timezone
+import os
 
 import bcrypt
 from bson import ObjectId
@@ -16,8 +17,8 @@ from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
 # ─── Configuration ────────────────────────────────────────────
-MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "movie_recommendation_db"
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+DB_NAME = os.getenv("DATABASE_NAME") or os.getenv("DB_NAME") or "movie_recommendation_db"
 
 
 # ─── Database Helper ──────────────────────────────────────────
@@ -155,7 +156,7 @@ def get_user_profile(user_id: str) -> dict | None:
 # ═══════════════════════════════════════════════════════════════
 # 5. SAVE USER HISTORY
 # ═══════════════════════════════════════════════════════════════
-def save_user_history(user_id: str, movie_id: int) -> None:
+def save_user_history(user_id: str, movie_id: int, rating: float | None = None) -> None:
     """
     Append a movie to the user's watch history.
 
@@ -167,14 +168,18 @@ def save_user_history(user_id: str, movie_id: int) -> None:
     db = _get_db()
     history = db["user_history"]
 
+    watched_doc = {
+        "movie_id": int(movie_id),
+        "watched_at": datetime.now(timezone.utc),
+    }
+    if rating is not None:
+        watched_doc["rating"] = float(rating)
+
     history.update_one(
         {"user_id": ObjectId(user_id)},
         {
             "$push": {
-                "watched": {
-                    "movie_id": movie_id,
-                    "watched_at": datetime.now(timezone.utc),
-                }
+                "watched": watched_doc
             }
         },
         upsert=True,

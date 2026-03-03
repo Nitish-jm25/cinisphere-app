@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Button } from '../ui/Button';
 import { X, Mail, Lock, User, ArrowRight } from 'lucide-react';
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+
 interface AuthModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -32,27 +34,45 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'signin', onSuccess }
 
     if (!isOpen) return null;
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setSuccessMsg('');
         setIsLoading(true);
 
-        // Mock API Call
-        setTimeout(() => {
+        try {
+            const endpoint = mode === 'signin' ? '/auth/signin' : '/auth/signup';
+            const payload =
+                mode === 'signin'
+                    ? { email, password }
+                    : { name, email, password };
+
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data?.detail || 'Authentication failed');
+            }
+
+            localStorage.setItem('current_user_id', data.user_id);
+            localStorage.setItem('current_user_name', data.name || '');
+            localStorage.setItem('current_user_email', data.email || '');
+
             setIsLoading(false);
             if (mode === 'signin') {
-                if (email === 'user@example.com' && password === 'password123') {
-                    setSuccessMsg('Login successful! Welcome back, User ID: u1');
-                    setTimeout(() => onSuccess(mode), 1500);
-                } else {
-                    setError('Invalid email or password. (Hint: user@example.com / password123)');
-                }
+                setSuccessMsg(`Login successful! Welcome back, ${data.name || 'User'}.`);
             } else {
                 setSuccessMsg('Account created successfully!');
-                setTimeout(() => onSuccess(mode), 1500);
             }
-        }, 1000);
+            setTimeout(() => onSuccess(mode), 900);
+        } catch (err: any) {
+            setIsLoading(false);
+            setError(err?.message || 'Something went wrong. Please try again.');
+        }
     };
 
     return (

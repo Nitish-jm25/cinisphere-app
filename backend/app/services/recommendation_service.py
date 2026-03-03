@@ -1,24 +1,19 @@
-from pymongo import MongoClient
 from fastapi import HTTPException
-from app.core.dependencies import ml_service
 
-# ─── MongoDB Configuration ─────────────────────────────────────
-MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "movie_recommendation_db"
-COLLECTION_NAME = "movies"
+from app.core import dependencies
+from app.db.mongo import get_movies_collection
 
-client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
-movies_collection = db[COLLECTION_NAME]
+movies_collection = get_movies_collection()
 
 
-# ─── Recommendation Service ────────────────────────────────────
 def generate_recommendations(user_text: str, top_k: int = 20) -> list[dict]:
     try:
-        # Step 1 — Use MLService (hybrid + diversity encapsulated)
-        diversified_ids: list[int] = ml_service.recommend(
+        if dependencies.ml_service is None:
+            raise HTTPException(status_code=503, detail="ML service not initialized")
+
+        diversified_ids = dependencies.ml_service.recommend(
             user_text=user_text,
-            top_k=top_k
+            top_k=top_k,
         )
 
         if not diversified_ids:
@@ -26,7 +21,6 @@ def generate_recommendations(user_text: str, top_k: int = 20) -> list[dict]:
 
         diversified_ids = [int(mid) for mid in diversified_ids]
 
-        # Step 2 — Fetch metadata from Mongo
         movies = list(
             movies_collection.find(
                 {"movie_id": {"$in": diversified_ids}},
@@ -44,15 +38,10 @@ def generate_recommendations(user_text: str, top_k: int = 20) -> list[dict]:
             )
         )
 
-        # Step 3 — Preserve ranking order (O(1) lookup)
         rank_map = {mid: idx for idx, mid in enumerate(diversified_ids)}
-
-        movies_sorted = sorted(
-            movies,
-            key=lambda x: rank_map.get(x["movie_id"], 9999),
-        )
-
+        movies_sorted = sorted(movies, key=lambda x: rank_map.get(x["movie_id"], 9999))
         return movies_sorted
-
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -3,3 +3,11 @@ uvicorn
 pymongo
 python-dotenv
 pydantic
+pydantic-settings
+bcrypt
+numpy
+pandas
+scikit-learn
+scipy
+joblib
+email-validator

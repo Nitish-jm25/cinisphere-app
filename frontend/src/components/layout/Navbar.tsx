@@ -1,4 +1,4 @@
-import { Film, User, Compass, Users } from 'lucide-react';
+import { Film, User, Compass, Users, Sparkles } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '../../utils/cn';
 import { SearchBar } from './SearchBar';
@@ -8,6 +8,8 @@ export const Navbar = () => {
 
     const navItems = [
         { label: 'Discover', path: '/discover', icon: <Compass className="w-5 h-5" /> },
+        { label: 'Home', path: '/home', icon: <Compass className="w-5 h-5" /> },
+        { label: 'Tailor Fit', path: '/tailor-fit', icon: <Sparkles className="w-5 h-5" /> },
         { label: 'Feed', path: '/feed', icon: <Film className="w-5 h-5" /> },
         { label: 'Community', path: '/community', icon: <Users className="w-5 h-5" /> },
         { label: 'Profile', path: '/profile', icon: <User className="w-5 h-5" /> },
