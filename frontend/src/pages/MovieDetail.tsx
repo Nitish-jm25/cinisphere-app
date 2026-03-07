@@ -75,6 +75,7 @@ export const MovieDetail = () => {
     // Format runtime
     const hours = movie.runtime ? Math.floor(movie.runtime / 60) : 0;
     const minutes = movie.runtime ? movie.runtime % 60 : 0;
+    const movieGenres = movie.genre_ids || [];
 
     return (
         <div className="min-h-screen bg-background pb-20 mt-[-64px]">
@@ -156,7 +157,7 @@ export const MovieDetail = () => {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                        {movie.genre_ids.map(id => (
+                        {movieGenres.map(id => (
                             <span key={id} className="text-xs uppercase font-semibold tracking-wider border border-white/20 bg-white/5 backdrop-blur-sm px-3 py-1 rounded-full text-gray-300">
                                 {MOCK_GENRES[id] || 'Unknown'}
                             </span>

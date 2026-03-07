@@ -6,6 +6,7 @@ class SurveyPayload(BaseModel):
     language: str
     movie_type: str
     release_pref: str = "any"
+    release_period: str = "any"
 
 
 class SignUpRequest(BaseModel):

@@ -13,6 +13,7 @@ import {
     RefreshCcw
 } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { useAuth } from '../context/AuthContext';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '');
 
@@ -22,6 +23,7 @@ interface SurveyData {
     mood: Mood | null;
     language: string;
     movieType: string;
+    releasePeriod: string;
 }
 
 interface MovieRecommendation {
@@ -54,12 +56,21 @@ const moods: { type: Mood; icon: any; color: string }[] = [
 
 const languages = ['English', 'Tamil', 'Hindi', 'Japanese'];
 const movieTypes = ['Action', 'Romance', 'Comedy', 'Thriller', 'Sci-Fi'];
+const releasePeriods = [
+    { label: 'Any Time', value: 'any' },
+    { label: '90s', value: '90s' },
+    { label: '2000s', value: '2000s' },
+    { label: '2010s', value: '2010s' },
+    { label: '2020s', value: '2020s' },
+];
 
 export const TailorFit = () => {
+    const { user } = useAuth();
     const [survey, setSurvey] = useState<SurveyData>({
         mood: null,
         language: '',
         movieType: '',
+        releasePeriod: 'any',
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [result, setResult] = useState<TailorFitResult | null>(null);
@@ -69,8 +80,7 @@ export const TailorFit = () => {
         e.preventDefault();
         if (!survey.mood || !survey.language || !survey.movieType) return;
 
-        const userId = localStorage.getItem('current_user_id');
-        if (!userId) {
+        if (!user?.id) {
             setError('Please sign in first to use Tailor Fit.');
             return;
         }
@@ -83,12 +93,13 @@ export const TailorFit = () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    user_id: userId,
+                    user_id: String(user.id),
                     survey: {
                         mood: survey.mood,
                         language: survey.language,
                         movie_type: survey.movieType,
                         release_pref: 'any',
+                        release_period: survey.releasePeriod,
                     },
                     top_k: 10,
                     similar_users_k: 5,
@@ -109,7 +120,7 @@ export const TailorFit = () => {
 
     const resetSurvey = () => {
         setResult(null);
-        setSurvey({ mood: null, language: '', movieType: '' });
+        setSurvey({ mood: null, language: '', movieType: '', releasePeriod: 'any' });
         setError('');
     };
 
@@ -183,7 +194,7 @@ export const TailorFit = () => {
                             </div>
 
                             {/* Language & Movie Type */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                                 <div className="space-y-4">
                                     <label className="text-sm font-medium text-gray-400 flex items-center gap-2">
                                         <Film className="w-4 h-4" />
@@ -218,6 +229,25 @@ export const TailorFit = () => {
                                             <option value="" disabled className="bg-[#0a0a0a]">Select Genre</option>
                                             {movieTypes.map(type => (
                                                 <option key={type} value={type} className="bg-[#0a0a0a]">{type}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none group-hover:text-white transition-colors" />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <label className="text-sm font-medium text-gray-400 flex items-center gap-2">
+                                        <Film className="w-4 h-4" />
+                                        Release Period
+                                    </label>
+                                    <div className="relative group">
+                                        <select
+                                            value={survey.releasePeriod}
+                                            onChange={(e) => setSurvey({ ...survey, releasePeriod: e.target.value })}
+                                            className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 appearance-none focus:outline-none focus:ring-2 focus:ring-white/20 transition-all hover:bg-white/10"
+                                        >
+                                            {releasePeriods.map((period) => (
+                                                <option key={period.value} value={period.value} className="bg-[#0a0a0a]">{period.label}</option>
                                             ))}
                                         </select>
                                         <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none group-hover:text-white transition-colors" />
@@ -293,6 +323,9 @@ export const TailorFit = () => {
                                     <div className="bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm text-gray-300 backdrop-blur-md">
                                         {survey.movieType}
                                     </div>
+                                    <div className="bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm text-gray-300 backdrop-blur-md">
+                                        {releasePeriods.find((p) => p.value === survey.releasePeriod)?.label || 'Any Time'}
+                                    </div>
                                 </div>
 
                                 <p className="text-gray-400 text-lg leading-relaxed max-w-lg">
@@ -319,7 +352,7 @@ export const TailorFit = () => {
                                         onClick={() => topMovie?.movie_id && window.open(`https://www.themoviedb.org/movie/${topMovie.movie_id}`, '_blank')}
                                         className="flex-1 bg-white text-black py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-white/10"
                                     >
-                                        Watch Now
+                                        More info
                                     </motion.button>
                                     <motion.button
                                         whileHover={{ scale: 1.05 }}

@@ -1,291 +1,274 @@
-import { useState } from 'react';
-import {
-    Users, Search, Plus, UserPlus,
-    MessageSquare, Film, Sparkles, MapPin,
-    Check
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { MessageSquare, Users, Send, UserPlus } from 'lucide-react';
+
 import { Button } from '../components/ui/Button';
-import { cn } from '../utils/cn';
+import { FeedPost, type Post } from '../components/community/FeedPost';
+import { socialApi, type CommunityMember, type CommunityMessage, type CommunitySummary, type SocialPost, type SocialUser } from '../services/socialApi';
+import { tmdbService } from '../services/tmdb';
+import { resolvePostImages } from '../utils/postImages';
 
-// --- MOCK DATA --- //
-interface CommunityType {
-    id: string;
-    name: string;
-    type: 'Genre' | 'Mood' | 'Language' | 'Local';
-    members: number;
-    image: string;
-    isJoined?: boolean;
-}
+const fallbackAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop';
 
-const DISCOVER_COMMUNITIES: CommunityType[] = [
-    { id: 'c1', name: 'Sci-Fi Explorers', type: 'Genre', members: 12500, image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=500&auto=format&fit=crop' },
-    { id: 'c2', name: 'Late Night Thrillers', type: 'Mood', members: 8300, image: 'https://images.unsplash.com/photo-1505322022379-7c3353ee6291?q=80&w=500&auto=format&fit=crop', isJoined: true },
-    { id: 'c3', name: 'Cinémathèque Française', type: 'Language', members: 4200, image: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?q=80&w=500&auto=format&fit=crop' },
-    { id: 'c4', name: 'Cozy Rom-Coms', type: 'Mood', members: 15100, image: 'https://images.unsplash.com/photo-1518621736915-f3b1c41bfd00?q=80&w=500&auto=format&fit=crop', isJoined: true },
-    { id: 'c5', name: 'Anime Enthusiasts', type: 'Genre', members: 22000, image: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=500&auto=format&fit=crop' },
-    { id: 'c6', name: 'Bollywood Classics', type: 'Language', members: 9800, image: 'https://images.unsplash.com/photo-1588693959600-b88307db1887?q=80&w=500&auto=format&fit=crop' },
-];
-
-interface Friend {
-    id: string;
-    name: string;
-    handle: string;
-    avatar: string;
-    similarity: number;
-    topGenres: string[];
-    isFollowing?: boolean;
-}
-
-const FRIEND_RECOMMENDATIONS: Friend[] = [
-    { id: 'f1', name: 'Alex Wong', handle: 'alexw', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop', similarity: 94, topGenres: ['Sci-Fi', 'Thriller'] },
-    { id: 'f2', name: 'Maria Garcia', handle: 'mariag_films', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=150&auto=format&fit=crop', similarity: 88, topGenres: ['Drama', 'Romance'], isFollowing: true },
-    { id: 'f3', name: 'James Smith', handle: 'jsmith_movies', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=150&auto=format&fit=crop', similarity: 85, topGenres: ['Action', 'Sci-Fi'] },
-    { id: 'f4', name: 'Emma Davis', handle: 'emma.d', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=150&auto=format&fit=crop', similarity: 79, topGenres: ['Comedy', 'Horror'] },
-];
-
-// --- COMPONENTS --- //
-
-const CommunityCard = ({ comm }: { comm: CommunityType }) => {
-    const [joined, setJoined] = useState(comm.isJoined || false);
-
-    const getBadgeColor = (type: string) => {
-        switch (type) {
-            case 'Genre': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-            case 'Mood': return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-            case 'Language': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-            default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-        }
-    };
-
-    const getIcon = (type: string) => {
-        switch (type) {
-            case 'Genre': return <Film className="w-3 h-3" />;
-            case 'Mood': return <Sparkles className="w-3 h-3" />;
-            case 'Language': return <MapPin className="w-3 h-3" />;
-            default: return null;
-        }
-    };
-
-    return (
-        <div className="glassmorphism rounded-xl overflow-hidden border border-white/10 group flex flex-col transition-all hover:-translate-y-1 hover:border-white/20 hover:shadow-xl hover:shadow-primary/5">
-            <div className="h-32 w-full relative overflow-hidden">
-                <img src={comm.image} alt={comm.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                <div className={cn("absolute top-3 left-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider backdrop-blur-md px-2.5 py-1 rounded-full border shadow-sm", getBadgeColor(comm.type))}>
-                    {getIcon(comm.type)}
-                    {comm.type}
-                </div>
-            </div>
-            <div className="p-4 flex-1 flex flex-col">
-                <h3 className="font-bold text-lg leading-tight mb-1 group-hover:text-primary transition-colors">{comm.name}</h3>
-                <p className="text-sm text-secondary-foreground mb-4 flex items-center gap-1.5">
-                    <Users className="w-4 h-4" />
-                    {(comm.members / 1000).toFixed(1)}k members
-                </p>
-                <div className="mt-auto pt-2 grid grid-cols-2 gap-2">
-                    <Button
-                        variant={joined ? "secondary" : "primary"}
-                        className={cn("w-full transition-all text-xs font-semibold h-9", joined && "bg-white/10 text-white")}
-                        onClick={() => setJoined(!joined)}
-                    >
-                        {joined ? <><Check className="w-4 h-4 mr-1" /> Joined</> : 'Join'}
-                    </Button>
-                    <Button variant="outline" className="w-full text-xs font-semibold h-9 border-white/10 glassmorphism hover:bg-white/10 group/btn relative overflow-hidden">
-                        <span className="relative z-10">Visit</span>
-                    </Button>
-                </div>
-            </div>
-        </div>
-    );
+const timeAgo = (createdAt: string): string => {
+  const date = new Date(createdAt).getTime();
+  const now = Date.now();
+  const diff = Math.floor((now - date) / 1000);
+  if (diff < 60) return 'now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
 };
 
-const FriendCard = ({ friend }: { friend: Friend }) => {
-    const [following, setFollowing] = useState(friend.isFollowing || false);
+const mapPost = (p: SocialPost): Post => {
+  const images = resolvePostImages(p.id, p.image_url, p.image_urls);
+  return {
+    id: String(p.id),
+    user: {
+      id: String(p.author.id),
+      name: p.author.username,
+      handle: p.author.username,
+      avatar: p.author.avatar_url || fallbackAvatar,
+    },
+    imageUrl: images[0],
+    imageUrls: images,
+    content: p.caption,
+    likes: p.likes_count,
+    comments: p.comments_count,
+    timeAgo: timeAgo(p.created_at),
+    isLikedByMe: p.is_liked,
+  };
+};
 
-    return (
-        <div className="flex items-center justify-between p-4 glassmorphism rounded-xl border border-white/10 hover:bg-white/5 transition-colors group">
-            <div className="flex items-center gap-4">
-                <div className="relative">
-                    <img src={friend.avatar} alt={friend.name} className="w-12 h-12 rounded-full object-cover border-2 border-transparent group-hover:border-primary transition-colors" />
-                    <div className="absolute -bottom-1 -right-1 bg-green-500/20 backdrop-blur-md border border-green-500/50 text-green-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center shadow-sm">
-                        {friend.similarity}%
-                    </div>
-                </div>
-                <div>
-                    <h4 className="font-semibold text-white">{friend.name}</h4>
-                    <p className="text-secondary-foreground text-xs mb-1">@{friend.handle}</p>
-                    <div className="flex gap-1.5 hidden sm:flex">
-                        {friend.topGenres.map(g => (
-                            <span key={g} className="text-[10px] bg-white/10 text-gray-300 px-1.5 py-0.5 rounded-md border border-white/5">
-                                {g}
-                            </span>
-                        ))}
-                    </div>
-                </div>
-            </div>
-            <div className="flex items-center gap-2">
-                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-full text-gray-400 hover:text-white glassmorphism border border-white/10 hidden sm:flex">
-                    <MessageSquare className="w-4 h-4" />
-                </Button>
-                <Button
-                    size="sm"
-                    variant={following ? "secondary" : "primary"}
-                    className={cn("text-xs font-semibold h-8 min-w-[90px]", following && "bg-white/10 text-white")}
-                    onClick={() => setFollowing(!following)}
-                >
-                    {following ? 'Following' : 'Connect'}
-                </Button>
-            </div>
-        </div>
-    );
+const toPosterUrl = (posterPath?: string | null) => {
+  if (!posterPath) return '';
+  return posterPath.startsWith('http') ? posterPath : `https://image.tmdb.org/t/p/w780${posterPath}`;
 };
 
 export const Communities = () => {
-    const [activeTab, setActiveTab] = useState<'discover' | 'my-communities' | 'friends'>('discover');
+  const { communityId } = useParams();
+  const navigate = useNavigate();
+  const [communities, setCommunities] = useState<CommunitySummary[]>([]);
+  const [selectedCommunityId, setSelectedCommunityId] = useState<number | null>(null);
 
-    return (
-        <div className="min-h-screen bg-background pb-24 pt-20">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+  const [members, setMembers] = useState<CommunityMember[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [messages, setMessages] = useState<CommunityMessage[]>([]);
+  const [whoToFollow, setWhoToFollow] = useState<SocialUser[]>([]);
 
-                {/* Header section */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
-                    <div>
-                        <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">Communities & Friends</h1>
-                        <p className="text-secondary-foreground">Connect with movie lovers who share your exact taste.</p>
+  const [chatText, setChatText] = useState('');
+  const [postCaption, setPostCaption] = useState('');
+  const [movieQuery, setMovieQuery] = useState('');
+  const [movieResults, setMovieResults] = useState<any[]>([]);
+  const [selectedMovie, setSelectedMovie] = useState<any | null>(null);
+
+  const selectedCommunity = useMemo(
+    () => communities.find((c) => c.id === selectedCommunityId) || null,
+    [communities, selectedCommunityId]
+  );
+
+  const loadCommunities = async () => {
+    const [communityRes, usersRes] = await Promise.all([
+      socialApi.listCommunities(),
+      socialApi.getDiscoverUsers(20),
+    ]);
+    setCommunities(communityRes.communities);
+    if (communityId) {
+      setSelectedCommunityId(Number(communityId));
+    } else if (!selectedCommunityId && communityRes.communities.length > 0) {
+      setSelectedCommunityId(communityRes.communities[0].id);
+    }
+    setWhoToFollow(usersRes.users);
+  };
+
+  const loadCommunityDetail = async (communityId: number) => {
+    const [membersRes, postRes, msgRes] = await Promise.all([
+      socialApi.getCommunityMembers(communityId),
+      socialApi.getCommunityPosts(communityId),
+      socialApi.getCommunityMessages(communityId),
+    ]);
+    setMembers(membersRes.members);
+    setPosts(postRes.map(mapPost));
+    setMessages(msgRes);
+  };
+
+  useEffect(() => {
+    loadCommunities().catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCommunityId) return;
+    loadCommunityDetail(selectedCommunityId).catch(console.error);
+  }, [selectedCommunityId]);
+
+  const handleJoinToggle = async (community: CommunitySummary) => {
+    if (community.joined) {
+      await socialApi.leaveCommunity(community.id);
+    } else {
+      await socialApi.joinCommunity(community.id);
+    }
+    await loadCommunities();
+    if (selectedCommunityId) await loadCommunityDetail(selectedCommunityId);
+  };
+
+  const handleFollow = async (userId: number) => {
+    await socialApi.followUser(userId);
+    setWhoToFollow((prev) => prev.filter((u) => u.id !== userId));
+  };
+
+  const handleSendChat = async () => {
+    if (!selectedCommunityId || !chatText.trim()) return;
+    const row = await socialApi.sendCommunityMessage(selectedCommunityId, chatText.trim());
+    setMessages((prev) => [...prev, row]);
+    setChatText('');
+  };
+
+  const handleSearchMovie = async () => {
+    if (!movieQuery.trim()) {
+      setMovieResults([]);
+      return;
+    }
+    const res = await tmdbService.searchMovies(movieQuery.trim());
+    setMovieResults(res.results.slice(0, 6));
+  };
+
+  const handleCreateCommunityPost = async () => {
+    if (!selectedCommunityId || !postCaption.trim()) return;
+    const poster = toPosterUrl(selectedMovie?.poster_path);
+    if (!poster) return;
+
+    const created = await socialApi.createCommunityPost(selectedCommunityId, {
+      caption: postCaption.trim(),
+      image_url: poster,
+      movie_title: selectedMovie?.title,
+    });
+
+    setPosts((prev) => [mapPost(created), ...prev]);
+    setPostCaption('');
+    setSelectedMovie(null);
+    setMovieQuery('');
+    setMovieResults([]);
+  };
+
+  const handleLikeToggle = async (postId: string, currentlyLiked: boolean) => {
+    if (currentlyLiked) await socialApi.unlikePost(Number(postId));
+    else await socialApi.likePost(Number(postId));
+  };
+
+  const handleAddComment = async (postId: string, content: string) => {
+    await socialApi.addComment(Number(postId), content);
+  };
+
+  const handleLoadComments = async (postId: string) => {
+    const rows = await socialApi.getComments(Number(postId));
+    return rows.map((c) => ({ id: String(c.id), username: c.author.username, text: c.content }));
+  };
+
+  return (
+    <div className="min-h-screen bg-background pb-24 pt-20">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <aside className="lg:col-span-1 space-y-3">
+            <h2 className="text-xl font-bold">Communities</h2>
+            {communities.map((c) => (
+              <div key={c.id} className={`glassmorphism border rounded-xl p-3 ${selectedCommunityId === c.id ? 'border-primary/60' : 'border-white/10'}`}>
+                <button className="w-full text-left" onClick={() => { setSelectedCommunityId(c.id); navigate(`/community/${c.id}`); }}>
+                  <p className="font-semibold">{c.name}</p>
+                  <p className="text-xs text-secondary-foreground">{c.member_count} members</p>
+                </button>
+                <Button size="sm" className="mt-2 w-full" variant={c.joined ? 'secondary' : 'primary'} onClick={() => handleJoinToggle(c)}>
+                  {c.joined ? 'Leave' : 'Join'}
+                </Button>
+              </div>
+            ))}
+          </aside>
+
+          <main className="lg:col-span-2 space-y-6">
+            <section className="glassmorphism border border-white/10 rounded-xl p-4">
+              <h3 className="font-bold text-lg">{selectedCommunity?.name || 'Community'}</h3>
+              <p className="text-sm text-secondary-foreground mb-3">{selectedCommunity?.description}</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <input className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 mb-2" placeholder="Search movie" value={movieQuery} onChange={(e) => setMovieQuery(e.target.value)} />
+                  <Button size="sm" onClick={handleSearchMovie}>Search Movie</Button>
+                  {movieResults.length > 0 && (
+                    <div className="mt-2 max-h-32 overflow-auto border border-white/10 rounded">
+                      {movieResults.map((m) => (
+                        <button key={m.id} className="w-full text-left px-2 py-1 hover:bg-white/10 text-sm" onClick={() => { setSelectedMovie(m); setMovieResults([]); setMovieQuery(m.title); }}>
+                          {m.title}
+                        </button>
+                      ))}
                     </div>
-
-                    <div className="flex items-center gap-3">
-                        <Button variant="outline" className="glassmorphism border-white/10 gap-2 h-10 hover:bg-white/10 text-sm">
-                            <UserPlus className="w-4 h-4" />
-                            Invite
-                        </Button>
-                        <Button className="gap-2 shadow-lg shadow-primary/20 h-10 text-sm">
-                            <Plus className="w-4 h-4" />
-                            Create Community
-                        </Button>
-                    </div>
+                  )}
                 </div>
-
-                {/* Custom Tabs Navigation */}
-                <div className="flex items-center gap-6 border-b border-white/10 mb-8 overflow-x-auto scrollbar-hide">
-                    <button
-                        onClick={() => setActiveTab('discover')}
-                        className={cn("pb-4 text-sm font-semibold transition-colors border-b-2 whitespace-nowrap", activeTab === 'discover' ? "border-primary text-white" : "border-transparent text-secondary-foreground hover:text-white")}
-                    >
-                        Discover Communities
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('my-communities')}
-                        className={cn("pb-4 text-sm font-semibold transition-colors border-b-2 whitespace-nowrap", activeTab === 'my-communities' ? "border-primary text-white" : "border-transparent text-secondary-foreground hover:text-white")}
-                    >
-                        My Communities
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('friends')}
-                        className={cn("pb-4 text-sm font-semibold transition-colors border-b-2 whitespace-nowrap flex items-center gap-2", activeTab === 'friends' ? "border-primary text-white" : "border-transparent text-secondary-foreground hover:text-white")}
-                    >
-                        Friends & Matches
-                        <span className="bg-primary/20 text-primary text-[10px] px-1.5 py-0.5 rounded-full font-bold">New</span>
-                    </button>
+                <div>
+                  <textarea className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2" rows={4} placeholder="Write community post" value={postCaption} onChange={(e) => setPostCaption(e.target.value)} />
                 </div>
+              </div>
 
-                {/* Tab Content */}
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <Button className="mt-3" onClick={handleCreateCommunityPost} disabled={!selectedMovie || !postCaption.trim()}>
+                Post in Community
+              </Button>
+            </section>
 
-                    {/* TAB 1 & 2: Communities */}
-                    {(activeTab === 'discover' || activeTab === 'my-communities') && (
-                        <div className="space-y-6">
-                            <div className="relative max-w-md">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-foreground" />
-                                <input
-                                    type="text"
-                                    placeholder="Search genres, moods, or languages..."
-                                    className="w-full bg-secondary/50 border border-white/10 rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-secondary-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all glassmorphism"
-                                />
-                            </div>
+            <section className="space-y-4">
+              {posts.map((p) => (
+                <FeedPost key={p.id} post={p} onLikeToggle={handleLikeToggle} onAddComment={handleAddComment} onLoadComments={handleLoadComments} />
+              ))}
+              {posts.length === 0 && <p className="text-sm text-secondary-foreground">No community posts yet.</p>}
+            </section>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                {DISCOVER_COMMUNITIES
-                                    .filter(c => activeTab === 'discover' ? true : c.isJoined)
-                                    .map(comm => (
-                                        <CommunityCard key={comm.id} comm={comm} />
-                                    ))}
-                            </div>
+            <section className="glassmorphism border border-white/10 rounded-xl p-4">
+              <h4 className="font-semibold mb-2 flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Community Chat</h4>
+              <div className="max-h-48 overflow-auto space-y-2 mb-3">
+                {messages.map((m) => (
+                  <div key={m.id} className="text-sm"><span className="font-semibold mr-2">{m.username}</span><span className="text-gray-300">{m.message}</span></div>
+                ))}
+                {messages.length === 0 && <p className="text-xs text-secondary-foreground">No messages yet.</p>}
+              </div>
+              <div className="flex gap-2">
+                <input className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2" placeholder="Type a message" value={chatText} onChange={(e) => setChatText(e.target.value)} />
+                <Button onClick={handleSendChat}><Send className="w-4 h-4" /></Button>
+              </div>
+            </section>
+          </main>
 
-                            {activeTab === 'my-communities' && !DISCOVER_COMMUNITIES.some(c => c.isJoined) && (
-                                <div className="text-center py-20 glassmorphism rounded-xl border border-white/10">
-                                    <Film className="w-12 h-12 text-secondary-foreground mx-auto mb-4 opacity-50" />
-                                    <h3 className="text-xl font-bold mb-2">No Communities Yet</h3>
-                                    <p className="text-secondary-foreground max-w-sm mx-auto mb-6">You haven't joined any communities. Explore the discover tab to find your tribe.</p>
-                                    <Button onClick={() => setActiveTab('discover')}>Find Communities</Button>
-                                </div>
-                            )}
-                        </div>
-                    )}
+          <aside className="lg:col-span-1 space-y-6">
+            <section className="glassmorphism border border-white/10 rounded-xl p-4">
+              <h3 className="font-bold mb-3 flex items-center gap-2"><Users className="w-4 h-4" /> Members</h3>
+              <div className="space-y-2 max-h-64 overflow-auto">
+                {members.map((m) => (
+                  <div key={m.id} className="flex items-center gap-2">
+                    <button type="button" onClick={() => navigate(`/profile/${m.username}`)}>
+                      <img src={m.avatar_url || fallbackAvatar} className="w-8 h-8 rounded-full object-cover" />
+                    </button>
+                    <button type="button" className="text-left" onClick={() => navigate(`/profile/${m.username}`)}>
+                      <p className="text-sm font-medium">{m.username}</p>
+                      <p className="text-xs text-secondary-foreground line-clamp-1">{m.bio}</p>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
 
-                    {/* TAB 3: Friends */}
-                    {activeTab === 'friends' && (
-                        <div className="flex flex-col lg:flex-row gap-8">
-
-                            {/* Left col: List view */}
-                            <div className="flex-1 space-y-6">
-                                <div>
-                                    <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                                        <Sparkles className="w-5 h-5 text-green-400" />
-                                        Top Taste Matches
-                                    </h2>
-                                    <div className="space-y-3">
-                                        {FRIEND_RECOMMENDATIONS.map(friend => (
-                                            <FriendCard key={friend.id} friend={friend} />
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Right col: CTA / Extras */}
-                            <div className="w-full lg:w-80 space-y-6">
-                                <div className="glassmorphism p-6 rounded-xl border border-white/10 text-center relative overflow-hidden group">
-                                    <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                                    <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner relative z-10 border border-white/10 group-hover:bg-primary/20 transition-colors">
-                                        <UserPlus className="w-8 h-8 text-white group-hover:scale-110 transition-transform" />
-                                    </div>
-                                    <h3 className="font-bold text-lg mb-2 relative z-10">Invite Your Squad</h3>
-                                    <p className="text-sm text-secondary-foreground mb-6 relative z-10">
-                                        Watching movies is better with friends. Sync your watchlists today.
-                                    </p>
-                                    <Button className="w-full shadow-lg shadow-primary/20 relative z-10">Share Invite Link</Button>
-                                </div>
-
-                                <div className="glassmorphism p-5 rounded-xl border border-white/10">
-                                    <h4 className="font-bold text-sm text-secondary-foreground uppercase tracking-wider mb-4">Your Social Stats</h4>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <div className="flex justify-between text-sm mb-1">
-                                                <span>Community Activity</span>
-                                                <span className="font-bold text-primary">Top 15%</span>
-                                            </div>
-                                            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                                                <div className="h-full bg-primary w-[85%] rounded-full" />
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div className="flex justify-between text-sm mb-1">
-                                                <span>Taste Uniqueness</span>
-                                                <span className="font-bold text-purple-400">High</span>
-                                            </div>
-                                            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                                                <div className="h-full bg-purple-500 w-[70%] rounded-full" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                        </div>
-                    )}
-
-                </div>
-            </div>
+            <section className="glassmorphism border border-white/10 rounded-xl p-4">
+              <h3 className="font-bold mb-3 flex items-center gap-2"><UserPlus className="w-4 h-4" /> Who to Follow</h3>
+              <div className="space-y-2 max-h-80 overflow-auto">
+                {whoToFollow.map((u) => (
+                  <div key={u.id} className="flex items-center justify-between gap-2">
+                    <button type="button" className="flex items-center gap-2" onClick={() => navigate(`/profile/${u.username}`)}>
+                      <img src={u.avatar_url || fallbackAvatar} className="w-8 h-8 rounded-full object-cover" />
+                      <p className="text-sm">{u.username}</p>
+                    </button>
+                    <Button size="sm" onClick={() => handleFollow(u.id)}>Follow</Button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </aside>
         </div>
-    );
+      </div>
+    </div>
+  );
 };

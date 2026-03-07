@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, X, Loader2, Film, Users, LayoutGrid } from 'lucide-react';
 
 import { tmdbService } from '../../services/tmdb';
@@ -9,19 +10,20 @@ import { cn } from '../../utils/cn';
 import { useDebounce } from '../../hooks/useDebounce';
 
 export const SearchBar = () => {
+    const navigate = useNavigate();
+    const location = useLocation();
     const [query, setQuery] = useState('');
     const [isOpen, setIsOpen] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
 
-    // Results state
     const [movies, setMovies] = useState<Movie[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [communities, setCommunities] = useState<Community[]>([]);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const debouncedQuery = useDebounce(query, 500);
+    const isDiscoverPage = location.pathname === '/discover';
 
-    // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -44,43 +46,48 @@ export const SearchBar = () => {
 
             setIsSearching(true);
             try {
-                const [movieResults, matchingUsers, matchingComms] = await Promise.all([
-                    tmdbService.searchMovies(debouncedQuery),
-                    dataService.searchUsers(debouncedQuery),
-                    dataService.searchCommunities(debouncedQuery)
-                ]);
+                const movieResults = await tmdbService.searchMovies(debouncedQuery);
+                const normalizedQuery = debouncedQuery.trim().toLowerCase();
+                const prefixMatches = movieResults.results
+                    .filter(movie => movie.title.toLowerCase().startsWith(normalizedQuery))
+                    .slice(0, 8);
+                setMovies(prefixMatches);
 
-                setMovies(movieResults.results.slice(0, 3)); // Top 3 movies
-                setUsers(matchingUsers.slice(0, 3)); // Top 3 users
-                setCommunities(matchingComms.slice(0, 3)); // Top 3 communities
+                if (isDiscoverPage) {
+                    setUsers([]);
+                    setCommunities([]);
+                } else {
+                    const [matchingUsers, matchingComms] = await Promise.all([
+                        dataService.searchUsers(debouncedQuery),
+                        dataService.searchCommunities(debouncedQuery)
+                    ]);
+                    setUsers(matchingUsers.slice(0, 3));
+                    setCommunities(matchingComms.slice(0, 3));
+                }
 
             } catch (error) {
-                console.error("Search failed:", error);
+                console.error('Search failed:', error);
             } finally {
                 setIsSearching(false);
             }
         };
 
         performSearch();
-    }, [debouncedQuery]);
+    }, [debouncedQuery, isDiscoverPage]);
 
     const hasResults = movies.length > 0 || users.length > 0 || communities.length > 0;
 
     return (
         <div className="relative w-full max-w-sm ml-4 md:ml-8" ref={containerRef}>
-            {/* Input Field */}
             <div className={cn(
-                "relative flex items-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full overflow-hidden transition-all duration-300",
-                isOpen && "bg-black/80 border-primary shadow-[0_0_15px_rgba(239,68,68,0.2)]",
-                "focus-within:bg-black/80 focus-within:border-primary focus-within:shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                'relative flex items-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full overflow-hidden transition-all duration-300',
+                isOpen && 'bg-black/80 border-primary shadow-[0_0_15px_rgba(239,68,68,0.2)]',
+                'focus-within:bg-black/80 focus-within:border-primary focus-within:shadow-[0_0_15px_rgba(239,68,68,0.2)]'
             )}>
-                <Search className={cn(
-                    "w-4 h-4 ml-4 transition-colors",
-                    isOpen || query ? "text-primary" : "text-gray-400"
-                )} />
+                <Search className={cn('w-4 h-4 ml-4 transition-colors', isOpen || query ? 'text-primary' : 'text-gray-400')} />
                 <input
                     type="text"
-                    placeholder="Search movies, friends..."
+                    placeholder={isDiscoverPage ? "Search movies..." : "Search movies, people..."}
                     value={query}
                     onChange={(e) => {
                         setQuery(e.target.value);
@@ -91,19 +98,12 @@ export const SearchBar = () => {
                 />
 
                 {query && (
-                    <button
-                        onClick={() => {
-                            setQuery('');
-                            setIsOpen(false);
-                        }}
-                        className="mr-3 p-1 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
-                    >
+                    <button onClick={() => { setQuery(''); setIsOpen(false); }} className="mr-3 p-1 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white">
                         <X className="w-3 h-3" />
                     </button>
                 )}
             </div>
 
-            {/* Dropdown Results */}
             {isOpen && query.trim() !== '' && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-50 max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-top-2">
 
@@ -118,7 +118,6 @@ export const SearchBar = () => {
                         </div>
                     ) : (
                         <div className="py-2">
-                            {/* Movies Section */}
                             {movies.length > 0 && (
                                 <div className="mb-4">
                                     <h4 className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider px-4 py-2 bg-white/5">
@@ -126,14 +125,10 @@ export const SearchBar = () => {
                                     </h4>
                                     <div className="px-2">
                                         {movies.map(movie => (
-                                            <div key={movie.id} className="flex gap-3 p-2 hover:bg-white/10 rounded-lg cursor-pointer transition-colors">
+                                            <div key={movie.id} className="flex gap-3 p-2 hover:bg-white/10 rounded-lg cursor-pointer transition-colors" onClick={() => { navigate(`/movie/${movie.id}`); setIsOpen(false); setQuery(''); }}>
                                                 <div className="w-10 h-14 bg-gray-800 rounded object-cover overflow-hidden flex-shrink-0">
                                                     {movie.poster_path && (
-                                                        <img
-                                                            src={movie.poster_path.startsWith('http') ? movie.poster_path : `https://image.tmdb.org/t/p/w200${movie.poster_path}`}
-                                                            alt={movie.title}
-                                                            className="w-full h-full object-cover"
-                                                        />
+                                                        <img src={movie.poster_path.startsWith('http') ? movie.poster_path : `https://image.tmdb.org/t/p/w200${movie.poster_path}`} alt={movie.title} className="w-full h-full object-cover" />
                                                     )}
                                                 </div>
                                                 <div className="flex flex-col justify-center">
@@ -146,15 +141,14 @@ export const SearchBar = () => {
                                 </div>
                             )}
 
-                            {/* Users Section */}
-                            {users.length > 0 && (
+                            {!isDiscoverPage && users.length > 0 && (
                                 <div className="mb-4">
                                     <h4 className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider px-4 py-2 bg-white/5">
                                         <Users className="w-3.5 h-3.5" /> People
                                     </h4>
                                     <div className="px-2">
                                         {users.map(user => (
-                                            <div key={user.id} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-lg cursor-pointer transition-colors">
+                                            <div key={user.id} className="flex items-center gap-3 p-2 hover:bg-white/10 rounded-lg cursor-pointer transition-colors" onClick={() => { navigate(`/profile/${user.username}`); setIsOpen(false); setQuery(''); }}>
                                                 <img src={user.avatarUrl} alt={user.username} className="w-10 h-10 rounded-full object-cover border border-white/10" />
                                                 <div className="flex flex-col">
                                                     <span className="font-bold text-sm text-white">@{user.username}</span>
@@ -166,8 +160,7 @@ export const SearchBar = () => {
                                 </div>
                             )}
 
-                            {/* Communities Section */}
-                            {communities.length > 0 && (
+                            {!isDiscoverPage && communities.length > 0 && (
                                 <div>
                                     <h4 className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider px-4 py-2 bg-white/5">
                                         <LayoutGrid className="w-3.5 h-3.5" /> Communities
