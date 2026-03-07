@@ -8,6 +8,7 @@ export interface Movie {
     vote_average: number;
     release_date: string;
     genre_ids: number[];
+    genres?: { id: number; name: string }[];
     overview: string;
     runtime?: number;
     videos?: { results: { key: string; type: string; site: string }[] };
@@ -125,7 +126,13 @@ export const tmdbService = {
     getMovieDetails: async (id: string): Promise<Movie> => {
         const response = await fetch(`${API_BASE_URL}/tmdb/movie/${id}`);
         if (!response.ok) throw new Error('Network error');
-        return response.json();
+        const movie = await response.json();
+        const normalizedGenreIds = Array.isArray(movie.genre_ids)
+            ? movie.genre_ids
+            : Array.isArray(movie.genres)
+                ? movie.genres.map((g: { id: number }) => g.id)
+                : [];
+        return { ...movie, genre_ids: normalizedGenreIds };
     },
 
     searchMovies: async (query: string): Promise<{ results: Movie[] }> => {
