@@ -3,6 +3,7 @@ from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
+from app.core.config import settings
 from app.db.sql import get_db_session
 from app.models.social_models import Community, CommunityMembership, CommunityPost, Post, User
 from app.schemas.social_schema import (
@@ -32,7 +33,17 @@ def list_communities(
 
     counts = (
         db.query(CommunityMembership.community_id, func.count(CommunityMembership.id))
+        .join(User, User.id == CommunityMembership.user_id)
         .filter(CommunityMembership.community_id.in_(community_ids))
+        .filter(
+            User.email.notlike("%@seed.example.com"),
+            User.email.notlike("%@seed.local"),
+        ) if settings.SOCIAL_HIDE_SEED_USERS else
+        db.query(CommunityMembership.community_id, func.count(CommunityMembership.id))
+        .filter(CommunityMembership.community_id.in_(community_ids))
+    )
+    counts = (
+        counts
         .group_by(CommunityMembership.community_id)
         .all()
     )
@@ -121,6 +132,16 @@ def get_members(
         db.query(User)
         .join(CommunityMembership, CommunityMembership.user_id == User.id)
         .filter(CommunityMembership.community_id == community_id)
+        .filter(
+            User.email.notlike("%@seed.example.com"),
+            User.email.notlike("%@seed.local"),
+        ) if settings.SOCIAL_HIDE_SEED_USERS else
+        db.query(User)
+        .join(CommunityMembership, CommunityMembership.user_id == User.id)
+        .filter(CommunityMembership.community_id == community_id)
+    )
+    rows = (
+        rows
         .order_by(User.username.asc())
         .all()
     )
@@ -152,7 +173,10 @@ def list_community_posts(
     if not ids:
         return []
 
-    posts = db.query(Post).filter(Post.id.in_(ids)).all()
+    posts_query = db.query(Post).join(User, User.id == Post.user_id).filter(Post.id.in_(ids))
+    if settings.SOCIAL_HIDE_SEED_USERS:
+        posts_query = posts_query.filter(User.email.notlike("%@seed.example.com")).filter(User.email.notlike("%@seed.local"))
+    posts = posts_query.all()
     post_map = {p.id: p for p in posts}
     ordered = [post_map[i] for i in ids if i in post_map]
     return [_build_post_response(db, p, current_user.id) for p in ordered]
