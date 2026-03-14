@@ -5,7 +5,10 @@ export interface Movie {
     title: string;
     poster_path: string | null;
     backdrop_path: string | null;
+    imdb_id?: string | null;
     vote_average: number;
+    vote_count?: number;
+    popularity?: number;
     release_date: string;
     genre_ids: number[];
     genres?: { id: number; name: string }[];
@@ -36,33 +39,6 @@ export interface MovieCredits {
     crew: CrewBadge[];
 }
 
-// Mock Data targeting high quality public domain/stock imagery concepts
-const COMMON_VIDEOS = {
-    results: [
-        { key: 'dQw4w9WgXcQ', type: 'Trailer', site: 'YouTube' },
-        { key: 'tY1jZ7u6kEo', type: 'Teaser', site: 'YouTube' }
-    ]
-};
-
-const COMMON_IMAGES = {
-    backdrops: [
-        { file_path: '/placeholder.jpg' },
-        { file_path: '/placeholder.jpg' },
-        { file_path: '/placeholder.jpg' }
-    ]
-};
-
-export const MOCK_MOVIES: Movie[] = [
-    { id: 1, title: 'Inception', poster_path: '/placeholder.jpg', backdrop_path: '/placeholder.jpg', vote_average: 8.8, release_date: '2010-07-15', genre_ids: [28, 878], overview: 'A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.', runtime: 148, videos: COMMON_VIDEOS, images: COMMON_IMAGES },
-    { id: 2, title: 'Interstellar', poster_path: '/placeholder.jpg', backdrop_path: '/placeholder.jpg', vote_average: 8.6, release_date: '2014-11-05', genre_ids: [12, 18, 878], overview: 'A team of explorers travel through a wormhole in space in an attempt to ensure humanity\'s survival.', runtime: 169, videos: COMMON_VIDEOS, images: COMMON_IMAGES },
-    { id: 3, title: 'The Dark Knight', poster_path: '/placeholder.jpg', backdrop_path: '/placeholder.jpg', vote_average: 9.0, release_date: '2008-07-16', genre_ids: [28, 80, 18], overview: 'When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological and physical tests of his ability to fight injustice.', runtime: 152, videos: COMMON_VIDEOS, images: COMMON_IMAGES },
-    { id: 4, title: 'Dune: Part Two', poster_path: '/placeholder.jpg', backdrop_path: '/placeholder.jpg', vote_average: 8.3, release_date: '2024-02-27', genre_ids: [878, 12], overview: 'Paul Atreides unites with Chani and the Fremen while on a warpath of revenge against the conspirators who destroyed his family.', runtime: 166, videos: COMMON_VIDEOS, images: COMMON_IMAGES },
-    { id: 5, title: 'Oppenheimer', poster_path: '/placeholder.jpg', backdrop_path: '/placeholder.jpg', vote_average: 8.1, release_date: '2023-07-19', genre_ids: [18, 36], overview: 'The story of J. Robert Oppenheimer\'s role in the development of the atomic bomb during World War II.', runtime: 180, videos: COMMON_VIDEOS, images: COMMON_IMAGES },
-    { id: 6, title: 'Blade Runner 2049', poster_path: '/placeholder.jpg', backdrop_path: '/placeholder.jpg', vote_average: 8.0, release_date: '2017-10-04', genre_ids: [878, 18], overview: 'Young Blade Runner K\'s discovery of a long-buried secret leads him to track down former Blade Runner Rick Deckard, who\'s been missing for thirty years.', runtime: 164, videos: COMMON_VIDEOS, images: COMMON_IMAGES },
-    { id: 7, title: 'Spider-Man: Across the Spider-Verse', poster_path: '/placeholder.jpg', backdrop_path: '/placeholder.jpg', vote_average: 8.4, release_date: '2023-05-31', genre_ids: [16, 28, 12], overview: 'Miles Morales catapults across the Multiverse, where he encounters a team of Spider-People charged with protecting its very existence.', runtime: 140, videos: COMMON_VIDEOS, images: COMMON_IMAGES },
-    { id: 8, title: 'Parasite', poster_path: '/placeholder.jpg', backdrop_path: '/placeholder.jpg', vote_average: 8.5, release_date: '2019-05-30', genre_ids: [35, 53, 18], overview: 'All unemployed, Ki-taek\'s family takes peculiar interest in the wealthy and glamorous Parks for their livelihood until they get entangled in an unexpected incident.', runtime: 132, videos: COMMON_VIDEOS, images: COMMON_IMAGES },
-];
-
 export const MOCK_GENRES: Record<number, string> = {
     28: 'Action',
     12: 'Adventure',
@@ -85,46 +61,92 @@ export const MOCK_GENRES: Record<number, string> = {
     37: 'Western'
 };
 
+const fetchWithTimeout = async (url: string, timeoutMs = 12000): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+};
+
+const safeResults = (payload: any): { results: Movie[] } => {
+    if (payload && Array.isArray(payload.results)) {
+        return { results: payload.results };
+    }
+    return { results: [] };
+};
+
 export const tmdbService = {
     getConfig: async () => {
-        const response = await fetch(`${API_BASE_URL}/tmdb/configuration`);
+        const response = await fetchWithTimeout(`${API_BASE_URL}/tmdb/configuration`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     },
 
     getTrendingMovies: async (): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${API_BASE_URL}/tmdb/trending`);
-        if (!response.ok) throw new Error('Network error');
-        return response.json();
+        try {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/tmdb/trending`);
+            if (!response.ok) throw new Error('Network error');
+            return safeResults(await response.json());
+        } catch (error) {
+            console.error('Failed to fetch trending movies', error);
+            return { results: [] };
+        }
     },
 
     getRecommendedMovies: async (): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${API_BASE_URL}/tmdb/top-rated`);
-        if (!response.ok) throw new Error('Network error');
-        return response.json();
+        try {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/tmdb/top-rated`);
+            if (!response.ok) throw new Error('Network error');
+            return safeResults(await response.json());
+        } catch (error) {
+            console.error('Failed to fetch recommended movies', error);
+            return { results: [] };
+        }
     },
 
     getUpcomingMovies: async (): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${API_BASE_URL}/tmdb/upcoming`);
-        if (!response.ok) throw new Error('Network error');
-        return response.json();
+        try {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/tmdb/upcoming`);
+            if (!response.ok) throw new Error('Network error');
+            return safeResults(await response.json());
+        } catch (error) {
+            console.error('Failed to fetch upcoming movies', error);
+            return { results: [] };
+        }
     },
 
-    getMoodPicks: async (): Promise<{ results: Movie[] }> => {
-        // Fetch popular movies as a proxy for mood picks for now
-        const response = await fetch(`${API_BASE_URL}/tmdb/popular`);
-        if (!response.ok) throw new Error('Network error');
-        return response.json();
+    getMoodPicks: async (params?: { mood?: string | null; language?: string | null; genres?: string[] }): Promise<{ results: Movie[] }> => {
+        try {
+            const q = new URLSearchParams();
+            if (params?.mood) q.set('mood', params.mood);
+            if (params?.language) q.set('language', params.language);
+            if (params?.genres?.length) q.set('genres', params.genres.join(','));
+            const suffix = q.toString() ? `?${q.toString()}` : '';
+            const response = await fetchWithTimeout(`${API_BASE_URL}/tmdb/mood-picks${suffix}`);
+            if (!response.ok) throw new Error('Network error');
+            return safeResults(await response.json());
+        } catch (error) {
+            console.error('Failed to fetch mood picks', error);
+            return { results: [] };
+        }
     },
 
     getTamilMovies: async (): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${API_BASE_URL}/tmdb/discover/tamil`);
-        if (!response.ok) throw new Error('Network error');
-        return response.json();
+        try {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/tmdb/discover/tamil`);
+            if (!response.ok) throw new Error('Network error');
+            return safeResults(await response.json());
+        } catch (error) {
+            console.error('Failed to fetch Tamil movies', error);
+            return { results: [] };
+        }
     },
 
     getMovieDetails: async (id: string): Promise<Movie> => {
-        const response = await fetch(`${API_BASE_URL}/tmdb/movie/${id}`);
+        const response = await fetchWithTimeout(`${API_BASE_URL}/tmdb/movie/${id}`);
         if (!response.ok) throw new Error('Network error');
         const movie = await response.json();
         const normalizedGenreIds = Array.isArray(movie.genre_ids)
@@ -136,13 +158,18 @@ export const tmdbService = {
     },
 
     searchMovies: async (query: string): Promise<{ results: Movie[] }> => {
-        const response = await fetch(`${API_BASE_URL}/tmdb/search?query=${encodeURIComponent(query)}`);
-        if (!response.ok) throw new Error('Network error');
-        return response.json();
+        try {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/tmdb/search?query=${encodeURIComponent(query)}`);
+            if (!response.ok) throw new Error('Network error');
+            return safeResults(await response.json());
+        } catch (error) {
+            console.error('Failed to search movies', error);
+            return { results: [] };
+        }
     },
 
     getMovieCredits: async (id: number): Promise<MovieCredits> => {
-        const response = await fetch(`${API_BASE_URL}/tmdb/movie/${id}/credits`);
+        const response = await fetchWithTimeout(`${API_BASE_URL}/tmdb/movie/${id}/credits`);
         if (!response.ok) throw new Error('Network error');
         return response.json();
     }

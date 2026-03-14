@@ -61,3 +61,7 @@ def get_current_user_optional(
         return _decode_user(token, db)
     except HTTPException:
         return None
+
+
+def decode_user_from_token(token: str, db: Session) -> User:
+    return _decode_user(token, db)

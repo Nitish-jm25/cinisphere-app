@@ -7,8 +7,9 @@ from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_current_user_optional
+from app.core.config import settings
 from app.db.sql import get_db_session
-from app.models.social_models import Follow, User
+from app.models.social_models import Follow, User, UserBlock
 from app.schemas.social_schema import (
     FollowActionResponse,
     SearchUsersResponse,
@@ -16,11 +17,28 @@ from app.schemas.social_schema import (
     UserProfileResponse,
     UserPublic,
 )
+from app.services.notification_service import create_notification
+from app.services.social_guard import is_blocked_either_direction
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
 AVATAR_UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads" / "avatars"
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _blocked_user_ids(db: Session, user_id: int) -> set[int]:
+    rows = (
+        db.query(UserBlock)
+        .filter(or_(UserBlock.blocker_id == user_id, UserBlock.blocked_id == user_id))
+        .all()
+    )
+    blocked: set[int] = set()
+    for row in rows:
+        if row.blocker_id == user_id:
+            blocked.add(row.blocked_id)
+        if row.blocked_id == user_id:
+            blocked.add(row.blocker_id)
+    return blocked
 
 
 @router.get("/me", response_model=UserPublic)
@@ -32,15 +50,17 @@ def me(current_user: User = Depends(get_current_user)):
 def search_users(
     q: str = Query(min_length=1),
     limit: int = Query(default=10, ge=1, le=50),
+    current_user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db_session),
 ):
-    users = (
-        db.query(User)
-        .filter(User.username.ilike(f"%{q.strip()}%"))
-        .order_by(User.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+    query = db.query(User).filter(User.username.ilike(f"%{q.strip()}%"))
+    if current_user:
+        blocked_ids = _blocked_user_ids(db, current_user.id)
+        if blocked_ids:
+            query = query.filter(~User.id.in_(blocked_ids))
+    if settings.SOCIAL_HIDE_SEED_USERS:
+        query = query.filter(User.email.notlike("%@seed.example.com")).filter(User.email.notlike("%@seed.local"))
+    users = query.order_by(User.created_at.desc()).limit(limit).all()
     return SearchUsersResponse(users=users)
 
 
@@ -52,14 +72,17 @@ def suggestions(
 ):
     following_subquery = db.query(Follow.following_id).filter(Follow.follower_id == current_user.id)
 
-    users = (
+    blocked_ids = _blocked_user_ids(db, current_user.id)
+    query = (
         db.query(User)
         .filter(User.id != current_user.id)
         .filter(~User.id.in_(following_subquery))
-        .order_by(User.created_at.desc())
-        .limit(limit)
-        .all()
     )
+    if blocked_ids:
+        query = query.filter(~User.id.in_(blocked_ids))
+    if settings.SOCIAL_HIDE_SEED_USERS:
+        query = query.filter(User.email.notlike("%@seed.example.com")).filter(User.email.notlike("%@seed.local"))
+    users = query.order_by(User.created_at.desc()).limit(limit).all()
     return SearchUsersResponse(users=users)
 
 
@@ -69,23 +92,14 @@ def discover_users(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session),
 ):
-    users = (
-        db.query(User)
-        .filter(User.id != current_user.id)
-        .filter(
-            or_(
-                User.email.like("%@seed.example.com"),
-                User.email.like("%@seed.local"),
-                User.email.notlike("%@seed.example.com"),
-            )
-        )
-        .order_by(
-            (User.email.like("%@seed.example.com") | User.email.like("%@seed.local")).desc(),
-            User.created_at.asc(),
-        )
-        .limit(limit)
-        .all()
-    )
+    blocked_ids = _blocked_user_ids(db, current_user.id)
+    following_subquery = db.query(Follow.following_id).filter(Follow.follower_id == current_user.id)
+    query = db.query(User).filter(User.id != current_user.id).filter(~User.id.in_(following_subquery))
+    if blocked_ids:
+        query = query.filter(~User.id.in_(blocked_ids))
+    if settings.SOCIAL_HIDE_SEED_USERS:
+        query = query.filter(User.email.notlike("%@seed.example.com")).filter(User.email.notlike("%@seed.local"))
+    users = query.order_by(User.created_at.desc()).limit(limit).all()
     return SearchUsersResponse(users=users)
 
 
@@ -98,6 +112,8 @@ def get_user_profile(
     user = db.query(User).filter(User.username == username).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if current_user and is_blocked_either_direction(db, current_user.id, user.id):
+        raise HTTPException(status_code=403, detail="Profile unavailable")
 
     followers_count = db.query(func.count(Follow.id)).filter(Follow.following_id == user.id).scalar() or 0
     following_count = db.query(func.count(Follow.id)).filter(Follow.follower_id == user.id).scalar() or 0
@@ -117,6 +133,55 @@ def get_user_profile(
         following_count=following_count,
         is_following=is_following,
     )
+
+
+def _visible_follow_users(
+    db: Session,
+    base_user: User,
+    current_user: User | None,
+    direction: str,
+):
+    blocked_ids = _blocked_user_ids(db, current_user.id) if current_user else set()
+    query = db.query(User)
+    if direction == "followers":
+        query = query.join(Follow, Follow.follower_id == User.id).filter(Follow.following_id == base_user.id)
+    else:
+        query = query.join(Follow, Follow.following_id == User.id).filter(Follow.follower_id == base_user.id)
+    if blocked_ids:
+        query = query.filter(~User.id.in_(blocked_ids))
+    if settings.SOCIAL_HIDE_SEED_USERS:
+        query = query.filter(User.email.notlike("%@seed.example.com")).filter(User.email.notlike("%@seed.local"))
+    return query.order_by(User.created_at.desc()).all()
+
+
+@router.get("/{username}/followers", response_model=SearchUsersResponse)
+def get_user_followers(
+    username: str,
+    db: Session = Depends(get_db_session),
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if current_user and is_blocked_either_direction(db, current_user.id, user.id):
+        raise HTTPException(status_code=403, detail="Profile unavailable")
+    users = _visible_follow_users(db, user, current_user, "followers")
+    return SearchUsersResponse(users=users)
+
+
+@router.get("/{username}/following", response_model=SearchUsersResponse)
+def get_user_following(
+    username: str,
+    db: Session = Depends(get_db_session),
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if current_user and is_blocked_either_direction(db, current_user.id, user.id):
+        raise HTTPException(status_code=403, detail="Profile unavailable")
+    users = _visible_follow_users(db, user, current_user, "following")
+    return SearchUsersResponse(users=users)
 
 
 @router.put("/profile", response_model=UserPublic)
@@ -175,12 +240,22 @@ def follow_user(
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    if is_blocked_either_direction(db, current_user.id, target.id):
+        raise HTTPException(status_code=403, detail="Cannot follow due to block settings")
 
     exists = db.query(Follow).filter(and_(Follow.follower_id == current_user.id, Follow.following_id == user_id)).first()
     if exists:
         return FollowActionResponse(success=True, message="Already following")
 
     db.add(Follow(follower_id=current_user.id, following_id=user_id))
+    create_notification(
+        db,
+        user_id=target.id,
+        actor_id=current_user.id,
+        notif_type="follow",
+        message=f"{current_user.username} started following you",
+        resource_id=current_user.id,
+    )
     db.commit()
     return FollowActionResponse(success=True, message="Followed")
 

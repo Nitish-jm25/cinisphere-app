@@ -1,22 +1,22 @@
-﻿import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Navigate, useParams } from 'react-router-dom';
 import {
     Settings, Edit3, Activity,
     Users, Bookmark, Calendar,
-    MapPin, Share2, LogOut
+    MapPin, Share2, LogOut, UserX, ShieldAlert, X
 } from 'lucide-react';
 
 import { Button } from '../components/ui/Button';
+import { Avatar } from '../components/ui/Avatar';
 import { cn } from '../utils/cn';
 import { FeedPost, type Post } from '../components/community/FeedPost';
-import { UserRow } from '../components/community/UserRow';
 import type { User } from '../services/mockData';
 import { socialApi, type CommunitySummary, type SocialUser } from '../services/socialApi';
 import { useAuth } from '../context/AuthContext';
 import { resolvePostImages } from '../utils/postImages';
+import { shareUrl } from '../utils/share';
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=2000&auto=format&fit=crop';
-const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=250&auto=format&fit=crop';
 const DEFAULT_COMMUNITY_IMAGE = 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=500&auto=format&fit=crop';
 
 const timeAgo = (createdAt: string): string => {
@@ -27,22 +27,21 @@ const timeAgo = (createdAt: string): string => {
     return `${Math.floor(diff / 86400)}d`;
 };
 
-const mapToUserRow = (u: SocialUser): User => ({
+const mapToFollowRow = (u: SocialUser): User => ({
     id: String(u.id),
     username: u.username,
-    avatarUrl: u.avatar_url || DEFAULT_AVATAR,
+    avatarUrl: u.avatar_url || '',
     bio: u.bio || 'Movie enthusiast',
     followers: 0,
     following: 0,
     favoriteGenres: [],
-    isFriend: false,
+    isFriend: Boolean(u.is_following),
 });
 
 export const Profile = () => {
     const { user: authUser, logout } = useAuth();
     const { username: routeUsername } = useParams();
     const [activeTab, setActiveTab] = useState<'saved' | 'activity' | 'communities'>('saved');
-    const [suggestedFriends, setSuggestedFriends] = useState<User[]>([]);
     const [communities, setCommunities] = useState<CommunitySummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [avatarUploading, setAvatarUploading] = useState(false);
@@ -53,52 +52,75 @@ export const Profile = () => {
 
     const [profile, setProfile] = useState<any>(null);
     const [activityPosts, setActivityPosts] = useState<Post[]>([]);
+    const [followersList, setFollowersList] = useState<User[]>([]);
+    const [followingList, setFollowingList] = useState<User[]>([]);
+    const [connectionsModal, setConnectionsModal] = useState<'followers' | 'following' | null>(null);
+    const [connectionsLoading, setConnectionsLoading] = useState(false);
 
-    const currentUsername = authUser?.username || '';
+    const currentUsername = authUser?.username || localStorage.getItem('current_user_name') || '';
     const usernameToLoad = routeUsername || currentUsername;
     const isOwnProfile = usernameToLoad === currentUsername;
 
     const galleryImages = activityPosts
         .flatMap((post) => (post.imageUrls?.length ? post.imageUrls : [post.imageUrl]))
         .filter((img): img is string => Boolean(img));
+    const joinedCommunities = communities.filter((community) => community.joined);
 
     useEffect(() => {
         const loadData = async () => {
             if (!usernameToLoad) return;
             setLoading(true);
             try {
-                const [discoverData, communitiesData, profileData] = await Promise.all([
-                    socialApi.getDiscoverUsers(12),
+                const profileData = await socialApi.getUserProfile(usernameToLoad);
+                setProfile(profileData);
+
+                const [communitiesRes, postsRes, followersRes, followingRes] = await Promise.allSettled([
                     socialApi.listCommunities(),
-                    socialApi.getUserProfile(usernameToLoad),
+                    socialApi.getUserPosts(profileData.user.id, 20, 0),
+                    socialApi.getUserFollowers(usernameToLoad),
+                    socialApi.getUserFollowing(usernameToLoad),
                 ]);
 
-                const posts = await socialApi.getUserPosts(profileData.user.id, 20, 0);
-
-                setSuggestedFriends(discoverData.users.map(mapToUserRow));
-                setCommunities(communitiesData.communities);
-                setProfile(profileData);
-                setActivityPosts(
-                    posts.map((p) => {
-                        const images = resolvePostImages(p.id, p.image_url, p.image_urls);
-                        return {
-                            id: String(p.id),
-                            user: {
-                                id: String(p.author.id),
-                                name: p.author.username,
-                                handle: p.author.username,
-                                avatar: p.author.avatar_url || DEFAULT_AVATAR,
-                            },
-                            imageUrl: images[0],
-                            imageUrls: images,
-                            content: p.caption,
-                            likes: p.likes_count,
-                            comments: p.comments_count,
-                            timeAgo: timeAgo(p.created_at),
-                            isLikedByMe: p.is_liked,
-                        };
-                    })
+                setCommunities(
+                    communitiesRes.status === 'fulfilled'
+                        ? communitiesRes.value.communities
+                        : []
                 );
+                setFollowersList(
+                    followersRes.status === 'fulfilled'
+                        ? followersRes.value.users.map(mapToFollowRow)
+                        : []
+                );
+                setFollowingList(
+                    followingRes.status === 'fulfilled'
+                        ? followingRes.value.users.map(mapToFollowRow)
+                        : []
+                );
+                setActivityPosts(
+                    postsRes.status === 'fulfilled'
+                        ? postsRes.value.map((p) => {
+                            const images = resolvePostImages(p.id, p.image_url, p.image_urls);
+                            return {
+                                id: String(p.id),
+                                user: {
+                                    id: String(p.author.id),
+                                    name: p.author.username,
+                                    handle: p.author.username,
+                                    avatar: p.author.avatar_url || '',
+                                },
+                                imageUrl: images[0],
+                                imageUrls: images,
+                                content: p.caption,
+                                likes: p.likes_count,
+                                comments: p.comments_count,
+                                timeAgo: timeAgo(p.created_at),
+                                isLikedByMe: p.is_liked,
+                            };
+                        })
+                        : []
+                );
+            } catch {
+                setProfile(null);
             } finally {
                 setLoading(false);
             }
@@ -106,14 +128,46 @@ export const Profile = () => {
         loadData();
     }, [usernameToLoad]);
 
+    const loadConnections = async (kind: 'followers' | 'following') => {
+        if (!usernameToLoad) return;
+        setConnectionsLoading(true);
+        try {
+            if (kind === 'followers') {
+                const res = await socialApi.getUserFollowers(usernameToLoad);
+                setFollowersList(res.users.map(mapToFollowRow));
+            } else {
+                const res = await socialApi.getUserFollowing(usernameToLoad);
+                setFollowingList(res.users.map(mapToFollowRow));
+            }
+        } finally {
+            setConnectionsLoading(false);
+        }
+    };
+
+    if (!routeUsername && currentUsername) {
+        return <Navigate to={`/profile/${currentUsername}`} replace />;
+    }
+
     const handleFollowToggle = async () => {
         if (!profile || isOwnProfile) return;
-        if (profile.is_following) {
-            await socialApi.unfollowUser(profile.user.id);
-            setProfile((prev: any) => ({ ...prev, is_following: false, followers_count: Math.max(0, prev.followers_count - 1) }));
-        } else {
-            await socialApi.followUser(profile.user.id);
-            setProfile((prev: any) => ({ ...prev, is_following: true, followers_count: prev.followers_count + 1 }));
+        try {
+            if (profile.is_following) {
+                await socialApi.unfollowUser(profile.user.id);
+                setProfile((prev: any) => ({ ...prev, is_following: false, followers_count: Math.max(0, prev.followers_count - 1) }));
+            } else {
+                await socialApi.followUser(profile.user.id);
+                setProfile((prev: any) => ({ ...prev, is_following: true, followers_count: prev.followers_count + 1 }));
+            }
+            const [refreshed, followersData, followingData] = await Promise.all([
+                socialApi.getUserProfile(usernameToLoad),
+                socialApi.getUserFollowers(usernameToLoad),
+                socialApi.getUserFollowing(usernameToLoad),
+            ]);
+            setProfile(refreshed);
+            setFollowersList(followersData.users.map(mapToFollowRow));
+            setFollowingList(followingData.users.map(mapToFollowRow));
+        } catch (error) {
+            alert((error as Error).message || 'Follow action failed');
         }
     };
 
@@ -179,12 +233,78 @@ export const Profile = () => {
         setActivityPosts((prev) => prev.filter((p) => p.id !== postId));
     };
 
+    const handleShareProfile = async () => {
+        const url = `${window.location.origin}/profile/${usernameToLoad}`;
+        await shareUrl(`${profile.user.username} on CineSphere`, profile.user.bio || 'Check this profile', url);
+    };
+
+    const handleBlockUser = async () => {
+        if (isOwnProfile) return;
+        if (!window.confirm(`Block @${profile.user.username}?`)) return;
+        try {
+            await socialApi.blockUser(profile.user.id);
+            window.location.href = '/home';
+        } catch (error) {
+            alert((error as Error).message || 'Block failed');
+        }
+    };
+
+    const handleReportUser = async () => {
+        if (isOwnProfile) return;
+        const reason = window.prompt('Enter report reason (e.g. harassment/spam):', 'spam');
+        if (!reason || !reason.trim()) return;
+        try {
+            await socialApi.report({ target_user_id: profile.user.id, reason: reason.trim() });
+            alert('Report submitted.');
+        } catch (error) {
+            alert((error as Error).message || 'Report failed');
+        }
+    };
+
     if (!profile) {
         return <div className="min-h-screen pt-24 text-center text-secondary-foreground">{loading ? 'Loading profile...' : 'Profile not found'}</div>;
     }
 
     return (
         <div className="min-h-screen bg-background pb-20 mt-[-64px]">
+            {connectionsModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/70" onClick={() => setConnectionsModal(null)} />
+                    <div className="relative w-full max-w-xl max-h-[80vh] overflow-hidden rounded-2xl border border-white/10 bg-[#121212]">
+                        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                            <h2 className="text-lg font-semibold">{connectionsModal === 'followers' ? 'Followers' : 'Following'}</h2>
+                            <button type="button" className="rounded-full p-2 hover:bg-white/10" onClick={() => setConnectionsModal(null)}>
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="max-h-[65vh] overflow-y-auto p-4 space-y-3">
+                            {connectionsLoading ? (
+                                <p className="text-sm text-secondary-foreground">Loading users...</p>
+                            ) : (connectionsModal === 'followers' ? followersList : followingList).length === 0 ? (
+                                <p className="text-sm text-secondary-foreground">No users to show.</p>
+                            ) : (
+                                (connectionsModal === 'followers' ? followersList : followingList).map((u) => (
+                                    <button
+                                        key={u.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setConnectionsModal(null);
+                                            window.location.href = `/profile/${u.username}`;
+                                        }}
+                                        className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-left hover:bg-white/[0.06]"
+                                    >
+                                        <Avatar src={u.avatarUrl} name={u.username} className="h-12 w-12" textClassName="text-sm" />
+                                        <div className="min-w-0">
+                                            <div className="font-medium text-white">{u.username}</div>
+                                            <div className="truncate text-sm text-secondary-foreground">{u.bio}</div>
+                                        </div>
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
             {isOwnProfile && editModalOpen && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/70" onClick={() => setEditModalOpen(false)} />
@@ -230,15 +350,19 @@ export const Profile = () => {
                 <div className="absolute inset-0 bg-black/20" />
 
                 <div className="absolute top-24 right-4 md:right-8 flex gap-3 z-10">
-                    <Button variant="ghost" className="h-10 w-10 p-0 rounded-full glassmorphism text-white hover:bg-white/20"><Share2 className="w-4 h-4" /></Button>
-                    <Button variant="ghost" className="h-10 w-10 p-0 rounded-full glassmorphism text-white hover:bg-white/20"><Settings className="w-4 h-4" /></Button>
+                    <Button variant="ghost" className="h-10 w-10 p-0 rounded-full glassmorphism text-white hover:bg-white/20" onClick={handleShareProfile}><Share2 className="w-4 h-4" /></Button>
+                    {isOwnProfile ? (
+                        <Button variant="ghost" className="h-10 w-10 p-0 rounded-full glassmorphism text-white hover:bg-white/20" onClick={openEditProfileModal}>
+                            <Settings className="w-4 h-4" />
+                        </Button>
+                    ) : null}
                 </div>
             </div>
 
             <div className="max-w-5xl mx-auto px-4 sm:px-6 md:px-8 relative z-20">
                 <div className="flex flex-col md:flex-row md:items-end gap-6 -mt-16 md:-mt-20 mb-10">
                     <div className="relative group">
-                        <img src={profile.user.avatar_url || DEFAULT_AVATAR} alt={profile.user.username} className="w-32 h-32 md:w-40 md:h-40 rounded-full object-cover border-4 border-background shadow-2xl" />
+                        <Avatar src={profile.user.avatar_url || ''} name={profile.user.username} className="w-32 h-32 md:w-40 md:h-40 border-4 border-background shadow-2xl" textClassName="text-3xl md:text-4xl" />
                         {isOwnProfile && (
                             <button className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity border-4 border-transparent" onClick={openEditProfileModal}>
                                 <Edit3 className="w-6 h-6 text-white" />
@@ -286,9 +410,17 @@ export const Profile = () => {
                                 </Button>
                             </>
                         ) : (
-                            <Button className="w-full md:w-auto gap-2" onClick={handleFollowToggle}>
-                                {profile.is_following ? 'Unfollow' : 'Follow'}
-                            </Button>
+                            <>
+                                <Button className="w-full md:w-auto gap-2" onClick={handleFollowToggle}>
+                                    {profile.is_following ? 'Unfollow' : 'Follow'}
+                                </Button>
+                                <Button variant="outline" className="w-full md:w-auto gap-2 border-white/20 text-white hover:bg-white/10" onClick={handleReportUser}>
+                                    <ShieldAlert className="w-4 h-4" /> Report
+                                </Button>
+                                <Button variant="outline" className="w-full md:w-auto gap-2 border-red-500/40 text-red-400 hover:bg-red-500/10" onClick={handleBlockUser}>
+                                    <UserX className="w-4 h-4" /> Block
+                                </Button>
+                            </>
                         )}
                     </div>
                 </div>
@@ -300,12 +432,30 @@ export const Profile = () => {
                             <p className="text-xs uppercase tracking-wider text-secondary-foreground font-semibold">Posts</p>
                         </div>
                         <div className="flex-1 text-center border-r border-white/10 last:border-0 pr-4">
-                            <p className="text-3xl font-bold tracking-tight text-white mb-1">{profile.followers_count}</p>
-                            <p className="text-xs uppercase tracking-wider text-secondary-foreground font-semibold">Followers</p>
+                            <button
+                                type="button"
+                                className="w-full"
+                                onClick={() => {
+                                    setConnectionsModal('followers');
+                                    loadConnections('followers');
+                                }}
+                            >
+                                <p className="text-3xl font-bold tracking-tight text-white mb-1">{profile.followers_count}</p>
+                                <p className="text-xs uppercase tracking-wider text-secondary-foreground font-semibold">Followers</p>
+                            </button>
                         </div>
                         <div className="flex-1 text-center">
-                            <p className="text-3xl font-bold tracking-tight text-white mb-1">{profile.following_count}</p>
-                            <p className="text-xs uppercase tracking-wider text-secondary-foreground font-semibold">Following</p>
+                            <button
+                                type="button"
+                                className="w-full"
+                                onClick={() => {
+                                    setConnectionsModal('following');
+                                    loadConnections('following');
+                                }}
+                            >
+                                <p className="text-3xl font-bold tracking-tight text-white mb-1">{profile.following_count}</p>
+                                <p className="text-xs uppercase tracking-wider text-secondary-foreground font-semibold">Following</p>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -327,7 +477,15 @@ export const Profile = () => {
                             ) : (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
                                     {galleryImages.map((img, idx) => (
-                                        <img key={`${img}-${idx}`} src={img} alt={`post-${idx}`} className="w-full aspect-[3/4] object-cover rounded-lg border border-white/10" />
+                                        <img
+                                            key={`${img}-${idx}`}
+                                            src={img}
+                                            alt={`post-${idx}`}
+                                            className="w-full aspect-[3/4] object-cover rounded-lg border border-white/10"
+                                            onError={(e) => {
+                                                e.currentTarget.src = '/vite.svg';
+                                            }}
+                                        />
                                     ))}
                                 </div>
                             )}
@@ -358,28 +516,22 @@ export const Profile = () => {
                     )}
 
                     {activeTab === 'communities' && (
-                        <div className="space-y-12">
-                            <div className="-mx-4 md:-mx-8">
-                                <UserRow title="Connect with Other Cinephiles" users={suggestedFriends} loading={loading} />
-                            </div>
-
-                            <div>
-                                <h3 className="font-bold text-lg flex items-center gap-2 mb-6">Communities</h3>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {communities.length === 0 && <p className="text-secondary-foreground">No communities available.</p>}
-                                    {communities.map((comm) => (
-                                        <div key={comm.id} className="glassmorphism rounded-xl overflow-hidden border border-white/10 group flex align-center p-4 gap-4 hover:border-white/30 transition-colors cursor-pointer">
-                                            <img src={comm.image_url || DEFAULT_COMMUNITY_IMAGE} alt={comm.name} className="w-20 h-20 rounded-lg object-cover" />
-                                            <div className="flex flex-col justify-center">
-                                                <h4 className="font-bold text-white group-hover:text-primary transition-colors">{comm.name}</h4>
-                                                <p className="text-xs text-secondary-foreground mb-2 line-clamp-2">{comm.description}</p>
-                                                <span className="text-xs bg-white/10 font-bold text-gray-300 w-fit px-2 py-0.5 rounded-full">
-                                                    {comm.member_count} members {comm.joined ? '• Joined' : ''}
-                                                </span>
-                                            </div>
+                        <div>
+                            <h3 className="font-bold text-lg flex items-center gap-2 mb-6">Joined Communities</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {joinedCommunities.length === 0 && <p className="text-secondary-foreground">No joined communities yet.</p>}
+                                {joinedCommunities.map((comm) => (
+                                    <div key={comm.id} className="glassmorphism rounded-xl overflow-hidden border border-white/10 group flex align-center p-4 gap-4 hover:border-white/30 transition-colors cursor-pointer">
+                                        <img src={comm.image_url || DEFAULT_COMMUNITY_IMAGE} alt={comm.name} className="w-20 h-20 rounded-lg object-cover" />
+                                        <div className="flex flex-col justify-center">
+                                            <h4 className="font-bold text-white group-hover:text-primary transition-colors">{comm.name}</h4>
+                                            <p className="text-xs text-secondary-foreground mb-2 line-clamp-2">{comm.description}</p>
+                                            <span className="text-xs bg-white/10 font-bold text-gray-300 w-fit px-2 py-0.5 rounded-full">
+                                                {comm.member_count} members | Joined
+                                            </span>
                                         </div>
-                                    ))}
-                                </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}

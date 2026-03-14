@@ -13,6 +13,7 @@ import { MovieDetail } from './pages/MovieDetail';
 import { CommunityFeed } from './pages/CommunityFeed';
 import { Communities } from './pages/Communities';
 import { Profile } from './pages/Profile';
+import { ResetPassword } from './pages/ResetPassword';
 import { TailorFit } from './pages/TailorFit';
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
             <Route element={<ProtectedRoute />}>
               <Route element={<RootLayout />}>

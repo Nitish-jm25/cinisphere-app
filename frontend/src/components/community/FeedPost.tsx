@@ -1,9 +1,11 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Heart, MessageCircle, Share2, Bookmark, MoreHorizontal, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { Button } from '../ui/Button';
+import { Avatar } from '../ui/Avatar';
 import { cn } from '../../utils/cn';
+import { shareUrl } from '../../utils/share';
 
 export interface User {
     id: string;
@@ -116,16 +118,22 @@ export const FeedPost = ({ post, className, style, onLikeToggle, onAddComment, o
         }
     };
 
+
+
+    const handleShare = async () => {
+        const url = `${window.location.origin}/feed?post=${post.id}`;
+        await shareUrl(`${post.user.name}'s post`, post.content.slice(0, 120), url);
+    };
     return (
         <div style={style} className={cn('glassmorphism rounded-xl overflow-hidden border border-white/10 shadow-lg', className)}>
             <div className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
                     <button type="button" onClick={() => navigate(`/profile/${post.user.handle}`)}>
-                        <img src={post.user.avatar} alt={post.user.name} className="w-10 h-10 rounded-full object-cover border border-white/20" />
+                        <Avatar src={post.user.avatar} name={post.user.name} className="w-10 h-10 border border-white/20" textClassName="text-xs" />
                     </button>
                     <button type="button" className="text-left" onClick={() => navigate(`/profile/${post.user.handle}`)}>
                         <h4 className="font-semibold text-sm text-foreground">{post.user.name}</h4>
-                        <p className="text-xs text-secondary-foreground">@{post.user.handle} • {post.timeAgo}</p>
+                        <p className="text-xs text-secondary-foreground">@{post.user.handle} - {post.timeAgo}</p>
                     </button>
                 </div>
                 {canDelete && (
@@ -155,7 +163,14 @@ export const FeedPost = ({ post, className, style, onLikeToggle, onAddComment, o
             </div>
 
             <div className="px-4 relative">
-                <img src={images[currentImage]} alt="post" className="w-full max-h-[520px] object-cover rounded-lg border border-white/10" />
+                <img
+                    src={images[currentImage]}
+                    alt="post"
+                    className="w-full max-h-[520px] object-cover rounded-lg border border-white/10"
+                    onError={(e) => {
+                        e.currentTarget.src = '/vite.svg';
+                    }}
+                />
                 {images.length > 1 && (
                     <>
                         <button className="absolute left-6 top-1/2 -translate-y-1/2 bg-black/50 p-2 rounded-full" onClick={() => setCurrentImage((i) => (i - 1 + images.length) % images.length)}>
@@ -187,7 +202,7 @@ export const FeedPost = ({ post, className, style, onLikeToggle, onAddComment, o
                         <span className="text-sm font-medium">{commentCount}</span>
                     </div>
 
-                    <button className="flex items-center gap-1.5 text-secondary-foreground hover:text-primary transition-colors group">
+                    <button onClick={handleShare} className="flex items-center gap-1.5 text-secondary-foreground hover:text-primary transition-colors group">
                         <Share2 className="w-6 h-6 transition-transform group-hover:scale-110" />
                     </button>
                 </div>

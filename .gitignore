@@ -148,3 +148,13 @@ backend/data/
 *.zip
 *.7z
 
+
+# Python virtual environments
+.venv/
+backend/.venv/
+frontend/.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+

@@ -19,8 +19,6 @@ export interface Community {
   description: string;
 }
 
-const DEFAULT_AVATAR = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150';
-
 const mapUser = (user: {
   id: number;
   username: string;
@@ -29,7 +27,7 @@ const mapUser = (user: {
 }): User => ({
   id: String(user.id),
   username: user.username,
-  avatarUrl: user.avatar_url || DEFAULT_AVATAR,
+  avatarUrl: user.avatar_url || '',
   bio: user.bio || 'Movie enthusiast',
   followers: 0,
   following: 0,

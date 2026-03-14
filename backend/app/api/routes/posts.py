@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.db.sql import get_db_session
-from app.models.social_models import Comment, Follow, Like, Post, PostMedia, User
+from app.models.social_models import Comment, Follow, Like, Post, PostMedia, User, UserBlock
 from app.schemas.social_schema import (
     CommentCreateRequest,
     CommentResponse,
@@ -17,6 +17,8 @@ from app.schemas.social_schema import (
     PostCreateRequest,
     PostResponse,
 )
+from app.services.notification_service import create_notification
+from app.services.social_guard import is_blocked_either_direction
 
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
@@ -57,6 +59,21 @@ def _build_post_response(db: Session, post: Post, current_user_id: int) -> PostR
         author=PostAuthor(id=author.id, username=author.username, avatar_url=author.avatar_url),
         image_urls=image_urls,
     )
+
+
+def _blocked_user_ids(db: Session, user_id: int) -> set[int]:
+    rows = (
+        db.query(UserBlock)
+        .filter((UserBlock.blocker_id == user_id) | (UserBlock.blocked_id == user_id))
+        .all()
+    )
+    blocked: set[int] = set()
+    for row in rows:
+        if row.blocker_id == user_id:
+            blocked.add(row.blocked_id)
+        if row.blocked_id == user_id:
+            blocked.add(row.blocker_id)
+    return blocked
 
 
 @router.post("", response_model=PostResponse)
@@ -155,15 +172,15 @@ def get_feed(
     db: Session = Depends(get_db_session),
 ):
     following_subquery = db.query(Follow.following_id).filter(Follow.follower_id == current_user.id)
+    blocked_ids = _blocked_user_ids(db, current_user.id)
 
-    posts = (
+    query = (
         db.query(Post)
         .filter((Post.user_id == current_user.id) | (Post.user_id.in_(following_subquery)))
-        .order_by(desc(Post.created_at))
-        .offset(offset)
-        .limit(limit)
-        .all()
     )
+    if blocked_ids:
+        query = query.filter(~Post.user_id.in_(blocked_ids))
+    posts = query.order_by(desc(Post.created_at)).offset(offset).limit(limit).all()
     return [_build_post_response(db, post, current_user.id) for post in posts]
 
 
@@ -175,6 +192,8 @@ def get_posts_by_user(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db_session),
 ):
+    if is_blocked_either_direction(db, current_user.id, user_id):
+        raise HTTPException(status_code=403, detail="Posts unavailable")
     posts = (
         db.query(Post)
         .filter(Post.user_id == user_id)
@@ -195,12 +214,22 @@ def like_post(
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
+    if is_blocked_either_direction(db, current_user.id, post.user_id):
+        raise HTTPException(status_code=403, detail="Action not allowed")
 
     existing = db.query(Like).filter(and_(Like.post_id == post_id, Like.user_id == current_user.id)).first()
     if existing:
         return {"success": True, "message": "Already liked"}
 
     db.add(Like(post_id=post_id, user_id=current_user.id))
+    create_notification(
+        db,
+        user_id=post.user_id,
+        actor_id=current_user.id,
+        notif_type="like",
+        message=f"{current_user.username} liked your post",
+        resource_id=post.id,
+    )
     db.commit()
     return {"success": True, "message": "Liked"}
 
@@ -230,9 +259,19 @@ def add_comment(
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
+    if is_blocked_either_direction(db, current_user.id, post.user_id):
+        raise HTTPException(status_code=403, detail="Action not allowed")
 
     comment = Comment(post_id=post_id, user_id=current_user.id, content=payload.content.strip())
     db.add(comment)
+    create_notification(
+        db,
+        user_id=post.user_id,
+        actor_id=current_user.id,
+        notif_type="comment",
+        message=f"{current_user.username} commented on your post",
+        resource_id=post.id,
+    )
     db.commit()
     db.refresh(comment)
 
@@ -255,6 +294,8 @@ def list_comments(
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
+    if is_blocked_either_direction(db, current_user.id, post.user_id):
+        raise HTTPException(status_code=403, detail="Comments unavailable")
 
     comments = (
         db.query(Comment)
@@ -262,6 +303,9 @@ def list_comments(
         .order_by(Comment.created_at.asc())
         .all()
     )
+    blocked_ids = _blocked_user_ids(db, current_user.id)
+    if blocked_ids:
+        comments = [c for c in comments if c.user_id not in blocked_ids]
 
     user_ids = {c.user_id for c in comments}
     users = db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []

@@ -33,6 +33,7 @@ interface MovieRecommendation {
     poster_path?: string | null;
     release_date?: string;
     genres?: string[];
+    imdb_id?: string;
 }
 
 interface SimilarUser {
@@ -54,7 +55,7 @@ const moods: { type: Mood; icon: any; color: string }[] = [
     { type: 'Romantic', icon: <Heart className="w-6 h-6" />, color: 'hover:text-pink-400 hover:bg-pink-400/10' },
 ];
 
-const languages = ['English', 'Tamil', 'Hindi', 'Japanese'];
+const languages = ['English', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Hindi', 'Japanese'];
 const movieTypes = ['Action', 'Romance', 'Comedy', 'Thriller', 'Sci-Fi'];
 const releasePeriods = [
     { label: 'Any Time', value: 'any' },
@@ -89,22 +90,30 @@ export const TailorFit = () => {
         setIsSubmitting(true);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/tailor-fit/recommend`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_id: String(user.id),
-                    survey: {
-                        mood: survey.mood,
-                        language: survey.language,
-                        movie_type: survey.movieType,
-                        release_pref: 'any',
-                        release_period: survey.releasePeriod,
-                    },
-                    top_k: 10,
-                    similar_users_k: 5,
-                }),
-            });
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 25000);
+            let response: Response;
+            try {
+                response = await fetch(`${API_BASE_URL}/tailor-fit/recommend`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        user_id: String(user.id),
+                        survey: {
+                            mood: survey.mood,
+                            language: survey.language,
+                            movie_type: survey.movieType,
+                            release_pref: 'any',
+                            release_period: survey.releasePeriod,
+                        },
+                        top_k: 10,
+                        similar_users_k: 5,
+                    }),
+                });
+            } finally {
+                clearTimeout(timeout);
+            }
 
             const data = await response.json();
             if (!response.ok) {
@@ -112,7 +121,11 @@ export const TailorFit = () => {
             }
             setResult(data);
         } catch (err: any) {
-            setError(err?.message || 'Failed to fetch recommendations');
+            if (err?.name === 'AbortError') {
+                setError('Recommendation timed out. Try again or choose a different language/genre.');
+            } else {
+                setError(err?.message || 'Failed to fetch recommendations');
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -125,9 +138,18 @@ export const TailorFit = () => {
     };
 
     const topMovie = result?.recommendations?.[0];
+    const moreInfoUrl = (() => {
+        if (!topMovie) return '';
+        if (topMovie.imdb_id) {
+            return `https://www.imdb.com/title/${topMovie.imdb_id}/`;
+        }
+        const year = topMovie.release_date ? ` ${topMovie.release_date.slice(0, 4)}` : '';
+        const q = encodeURIComponent(`${topMovie.title}${year}`);
+        return `https://www.imdb.com/find/?q=${q}&s=tt&ttype=ft`;
+    })();
     const posterUrl = topMovie?.poster_path
-        ? `https://image.tmdb.org/t/p/w500${topMovie.poster_path}`
-        : null;
+        ? (topMovie.poster_path.startsWith('http') ? topMovie.poster_path : `https://image.tmdb.org/t/p/w500${topMovie.poster_path}`)
+        : '/vite.svg';
 
     return (
         <div className="min-h-screen relative overflow-hidden bg-[#0a0a0a] flex items-center justify-center p-6 sm:p-12">
@@ -303,15 +325,16 @@ export const TailorFit = () => {
                                     <h2 className="text-4xl font-black text-white">{topMovie?.title || 'No Match Found'}</h2>
                                 </div>
 
-                                {posterUrl && (
-                                    <div className="w-full max-w-xs">
-                                        <img
-                                            src={posterUrl}
-                                            alt={topMovie?.title || 'Recommended movie'}
-                                            className="w-full h-auto rounded-2xl border border-white/10 shadow-xl"
-                                        />
-                                    </div>
-                                )}
+                                <div className="w-full max-w-xs">
+                                    <img
+                                        src={posterUrl}
+                                        alt={topMovie?.title || 'Recommended movie'}
+                                        className="w-full h-auto rounded-2xl border border-white/10 shadow-xl"
+                                        onError={(e) => {
+                                            e.currentTarget.src = '/vite.svg';
+                                        }}
+                                    />
+                                </div>
 
                                 <div className="flex flex-wrap gap-3">
                                     <div className="bg-white/10 border border-white/10 px-4 py-2 rounded-full text-sm text-gray-300 backdrop-blur-md">
@@ -332,6 +355,19 @@ export const TailorFit = () => {
                                     {topMovie?.overview || 'No overview available for this recommendation.'}
                                 </p>
 
+                                {result.recommendations.length > 1 && (
+                                    <div className="space-y-2">
+                                        <p className="text-sm uppercase tracking-widest text-gray-400">More Matches</p>
+                                        <ul className="space-y-1 text-sm text-gray-200">
+                                            {result.recommendations.slice(1, 6).map((movie) => (
+                                                <li key={movie.movie_id} className="truncate">
+                                                    {movie.title} {movie.release_date ? `(${movie.release_date.slice(0, 4)})` : ''}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
                                 {result.similar_users?.length > 0 && (
                                     <div className="space-y-2">
                                         <p className="text-sm uppercase tracking-widest text-gray-400">Users With Similar Taste</p>
@@ -349,7 +385,7 @@ export const TailorFit = () => {
                                     <motion.button
                                         whileHover={{ scale: 1.05 }}
                                         whileTap={{ scale: 0.95 }}
-                                        onClick={() => topMovie?.movie_id && window.open(`https://www.themoviedb.org/movie/${topMovie.movie_id}`, '_blank')}
+                                        onClick={() => moreInfoUrl && window.open(moreInfoUrl, '_blank')}
                                         className="flex-1 bg-white text-black py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-white/10"
                                     >
                                         More info

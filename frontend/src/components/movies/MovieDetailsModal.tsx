@@ -15,9 +15,13 @@ export const MovieDetailsModal = ({ movie, onClose }: MovieDetailsModalProps) =>
     const [isMoreInfo, setIsMoreInfo] = useState(false);
     const [credits, setCredits] = useState<MovieCredits | null>(null);
     const [fullMovie, setFullMovie] = useState<Movie | null>(null);
+    const [creditsLoading, setCreditsLoading] = useState(true);
+    const [creditsError, setCreditsError] = useState(false);
 
     useEffect(() => {
         const fetchDetails = async () => {
+            setCreditsLoading(true);
+            setCreditsError(false);
             try {
                 const [details, movieCredits] = await Promise.all([
                     tmdbService.getMovieDetails(movie.id.toString()),
@@ -27,6 +31,9 @@ export const MovieDetailsModal = ({ movie, onClose }: MovieDetailsModalProps) =>
                 setCredits(movieCredits);
             } catch (error) {
                 console.error("Failed to fetch detailed movie info", error);
+                setCreditsError(true);
+            } finally {
+                setCreditsLoading(false);
             }
         };
 
@@ -42,13 +49,26 @@ export const MovieDetailsModal = ({ movie, onClose }: MovieDetailsModalProps) =>
     }, []);
 
     const displayMovie = fullMovie || movie;
+    const releaseYear = (() => {
+        const d = new Date(displayMovie.release_date || '');
+        const year = d.getFullYear();
+        return Number.isFinite(year) ? String(year) : 'Unknown';
+    })();
     const backdrops = displayMovie.images?.backdrops?.slice(0, 6) || [];
-    const cast = credits?.cast.slice(0, 10) || [];
-    const directors = credits?.crew.filter(c => c.job === 'Director') || [];
+    const cast = (credits?.cast || [])
+        .filter((actor) => actor?.name)
+        .slice(0, 10);
+    const notableCrew = (credits?.crew || [])
+        .filter((member) => member?.name)
+        .filter((member) => ['Director', 'Writer', 'Screenplay', 'Story', 'Producer', 'Executive Producer'].includes(member.job))
+        .filter((member, index, arr) => arr.findIndex((entry) => entry.id === member.id && entry.job === member.job) === index)
+        .slice(0, 8);
+    const directors = notableCrew.filter(c => c.job === 'Director');
+    const showPeopleSection = creditsLoading || cast.length > 0 || notableCrew.length > 0 || creditsError;
 
     const bgImage = displayMovie.backdrop_path
         ? (displayMovie.backdrop_path.startsWith('http') ? displayMovie.backdrop_path : `https://image.tmdb.org/t/p/original${displayMovie.backdrop_path}`)
-        : 'https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=2070&auto=format&fit=crop';
+        : '/vite.svg';
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 md:p-12">
@@ -90,7 +110,7 @@ export const MovieDetailsModal = ({ movie, onClose }: MovieDetailsModalProps) =>
                                     <Star className="w-4 h-4 fill-current" />
                                     {displayMovie.vote_average.toFixed(1)}
                                 </span>
-                                <span>{displayMovie.release_date?.split('-')[0]}</span>
+                                <span>{releaseYear}</span>
                                 {displayMovie.runtime && (
                                     <span className="flex items-center gap-1">
                                         <Clock className="w-4 h-4" />
@@ -142,35 +162,66 @@ export const MovieDetailsModal = ({ movie, onClose }: MovieDetailsModalProps) =>
                             </div>
 
                             {/* Cast Section */}
-                            {cast.length > 0 && (
+                            {showPeopleSection && (
                                 <div>
                                     <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-                                        <Users className="w-5 h-5 text-primary" /> Top Cast
+                                        <Users className="w-5 h-5 text-primary" /> Cast & Crew
                                     </h3>
-                                    <div className="flex overflow-x-auto gap-4 pb-4 scrollbar-hide snap-x">
-                                        {cast.map(actor => (
-                                            <div key={actor.id} className="flex-shrink-0 w-28 snap-start group">
-                                                <div className="w-28 h-28 mb-3 rounded-full overflow-hidden bg-gray-800 border-2 border-transparent group-hover:border-primary transition-colors">
-                                                    {actor.profile_path ? (
-                                                        <img
-                                                            src={`https://image.tmdb.org/t/p/w185${actor.profile_path}`}
-                                                            alt={actor.name}
-                                                            className="w-full h-full object-cover"
-                                                            loading="lazy"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-full h-full flex items-center justify-center text-gray-500">
-                                                            <Users className="w-8 h-8" />
-                                                        </div>
-                                                    )}
+                                    {creditsLoading ? (
+                                        <div className="text-sm text-gray-400">Loading cast and crew...</div>
+                                    ) : creditsError ? (
+                                        <div className="text-sm text-gray-400">Cast and crew could not be loaded for this title.</div>
+                                    ) : (
+                                        <div className="space-y-8">
+                                            {cast.length > 0 ? (
+                                                <div>
+                                                    <div className="mb-4 text-sm font-semibold uppercase tracking-[0.14em] text-gray-400">Top Cast</div>
+                                                    <div className="flex overflow-x-auto gap-4 pb-4 scrollbar-hide snap-x">
+                                                        {cast.map(actor => (
+                                                            <div key={actor.id} className="flex-shrink-0 w-28 snap-start group">
+                                                                <div className="w-28 h-28 mb-3 rounded-full overflow-hidden bg-gray-800 border-2 border-transparent group-hover:border-primary transition-colors">
+                                                                    {actor.profile_path ? (
+                                                                        <img
+                                                                            src={`https://image.tmdb.org/t/p/w185${actor.profile_path}`}
+                                                                            alt={actor.name}
+                                                                            className="w-full h-full object-cover"
+                                                                            loading="lazy"
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="w-full h-full flex items-center justify-center text-gray-500">
+                                                                            <Users className="w-8 h-8" />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-center">
+                                                                    <div className="font-bold text-sm text-white truncate">{actor.name}</div>
+                                                                    <div className="text-xs text-gray-400 truncate mt-0.5">{actor.character}</div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                                <div className="text-center">
-                                                    <div className="font-bold text-sm text-white truncate">{actor.name}</div>
-                                                    <div className="text-xs text-gray-400 truncate mt-0.5">{actor.character}</div>
+                                            ) : null}
+
+                                            {notableCrew.length > 0 ? (
+                                                <div>
+                                                    <div className="mb-4 text-sm font-semibold uppercase tracking-[0.14em] text-gray-400">Crew</div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                        {notableCrew.map((member) => (
+                                                            <div key={`${member.id}-${member.job}`} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                                                                <div className="text-sm font-semibold text-white">{member.name}</div>
+                                                                <div className="mt-1 text-xs uppercase tracking-[0.12em] text-gray-400">{member.job}</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            ) : null}
+
+                                            {!cast.length && !notableCrew.length ? (
+                                                <div className="text-sm text-gray-400">No cast or crew details are available for this title.</div>
+                                            ) : null}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

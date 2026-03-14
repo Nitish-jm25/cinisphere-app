@@ -22,6 +22,23 @@ class AuthTokenResponse(BaseModel):
     email: EmailStr
 
 
+class EmailVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class EmailVerificationConfirmRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=255)
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=255)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -30,6 +47,7 @@ class UserPublic(BaseModel):
     email: EmailStr
     bio: str
     avatar_url: str | None = None
+    is_email_verified: bool = False
     created_at: datetime
 
 
@@ -140,3 +158,35 @@ class CommunityPostCreate(BaseModel):
     caption: str = Field(default="", max_length=2200)
     image_url: str = Field(min_length=1, max_length=1024)
     movie_title: str | None = Field(default=None, max_length=255)
+
+
+class NotificationItem(BaseModel):
+    id: int
+    type: str
+    actor_id: int | None = None
+    actor_username: str | None = None
+    actor_avatar_url: str | None = None
+    resource_id: int | None = None
+    message: str
+    is_read: bool
+    created_at: datetime
+
+
+class NotificationListResponse(BaseModel):
+    notifications: list[NotificationItem]
+    unread_count: int
+
+
+class NotificationReadRequest(BaseModel):
+    ids: list[int] = Field(default_factory=list)
+
+
+class BlockUserRequest(BaseModel):
+    user_id: int
+
+
+class ModerationReportRequest(BaseModel):
+    target_user_id: int | None = None
+    target_post_id: int | None = None
+    reason: str = Field(min_length=3, max_length=120)
+    details: str = Field(default="", max_length=2000)

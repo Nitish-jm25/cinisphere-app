@@ -30,6 +30,22 @@ MOOD_MAP = {
     "mass/action": "mass/action",
 }
 
+LANGUAGE_CODE_MAP = {
+    "english": "en",
+    "tamil": "ta",
+    "hindi": "hi",
+    "telugu": "te",
+    "malayalam": "ml",
+    "kannada": "kn",
+    "japanese": "ja",
+    "korean": "ko",
+    "french": "fr",
+    "german": "de",
+    "spanish": "es",
+}
+
+MAX_TAILOR_FIT_CANDIDATES = 50000
+
 
 def _movies_collection():
     client = MongoClient(settings.MONGO_URI)
@@ -38,7 +54,8 @@ def _movies_collection():
 
 def normalize_survey_dict(survey: dict[str, Any]) -> dict[str, Any]:
     mood_raw = str(survey.get("mood", "")).strip().lower()
-    language = str(survey.get("language", "")).strip().lower()
+    language_raw = str(survey.get("language", "")).strip().lower()
+    language = LANGUAGE_CODE_MAP.get(language_raw, language_raw)
     movie_type = str(survey.get("movie_type", "")).strip().lower()
     release_pref = str(survey.get("release_pref", "any")).strip().lower() or "any"
     release_period = str(survey.get("release_period", "any")).strip().lower() or "any"
@@ -52,8 +69,32 @@ def normalize_survey_dict(survey: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _load_movies_df() -> pd.DataFrame:
-    movies = list(_movies_collection().find({}, {"_id": 0}))
+def _load_movies_df(survey_data: dict[str, Any] | None = None, limit: int = MAX_TAILOR_FIT_CANDIDATES) -> pd.DataFrame:
+    query: dict[str, Any] = {
+        "title": {"$nin": [None, ""]},
+        "poster_path": {"$nin": [None, "", "/vite.svg"]},
+    }
+
+    lang = None
+    if survey_data and survey_data.get("languages"):
+        lang = str(survey_data["languages"][0]).strip().lower()
+        if lang:
+            query["original_language"] = lang
+
+    movies = list(
+        _movies_collection()
+        .find(query, {"_id": 0})
+        .sort([("popularity", -1), ("vote_count", -1), ("vote_average", -1)])
+        .limit(max(limit, 5000))
+    )
+    if not movies and lang:
+        query.pop("original_language", None)
+        movies = list(
+            _movies_collection()
+            .find(query, {"_id": 0})
+            .sort([("popularity", -1), ("vote_count", -1), ("vote_average", -1)])
+            .limit(max(limit, 5000))
+        )
     if not movies:
         raise HTTPException(status_code=400, detail="No movies found in DB. Run ingestion first.")
     return pd.DataFrame(movies)
@@ -270,8 +311,8 @@ def _diversify_recommendations(recs_df: pd.DataFrame, top_k: int) -> pd.DataFram
     return diversified.head(top_k)
 
 
-def build_profile_vector_from_survey(survey_data: dict[str, Any]) -> list[float]:
-    df = _load_movies_df()
+def build_profile_vector_from_survey(survey_data: dict[str, Any], df: pd.DataFrame | None = None) -> list[float]:
+    df = df if df is not None else _load_movies_df(survey_data=survey_data)
     df_feat = prepare_features(df)
     user_doc = build_survey_profile(survey_data)
     corpus = df_feat["content"].tolist() + [user_doc]
@@ -292,7 +333,7 @@ def recommend_tailor_fit(
     similar_users_k: int = 5,
 ) -> dict[str, Any]:
     survey_data = normalize_survey_dict(survey)
-    df = _load_movies_df()
+    df = _load_movies_df(survey_data=survey_data)
     df = _apply_release_period_filter(df, survey_data.get("release_period", "any"))
 
     # Larger candidate pool to allow collaborative reranking.
@@ -301,10 +342,10 @@ def recommend_tailor_fit(
     if recs_df.empty:
         return {"recommendations": [], "similar_users": []}
 
-    profile_vector = build_profile_vector_from_survey(survey_data)
     # Mongo-side profile persistence expects ObjectId-based users.
     # Social auth users are SQL integers; skip Mongo profile upsert for them.
     if ObjectId.is_valid(user_id):
+        profile_vector = build_profile_vector_from_survey(survey_data, df=df)
         user_manager.save_user_profile(
             user_id=user_id,
             survey_data=survey_data,

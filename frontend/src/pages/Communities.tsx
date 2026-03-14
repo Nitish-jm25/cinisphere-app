@@ -1,14 +1,28 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { MessageSquare, Users, Send, UserPlus } from 'lucide-react';
+import { MessageSquare, Users, Send, UserPlus, RefreshCcw, Search } from 'lucide-react';
 
 import { Button } from '../components/ui/Button';
+import { Avatar } from '../components/ui/Avatar';
 import { FeedPost, type Post } from '../components/community/FeedPost';
 import { socialApi, type CommunityMember, type CommunityMessage, type CommunitySummary, type SocialPost, type SocialUser } from '../services/socialApi';
 import { tmdbService } from '../services/tmdb';
 import { resolvePostImages } from '../utils/postImages';
 
-const fallbackAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop';
+const COMMUNITY_TOPICS: Record<string, string[]> = {
+  Anime: ['Anime', 'Visuals', 'Soundtracks'],
+  Underrated: ['Hidden Gems', 'Cult', 'Underrated'],
+  IndieCinema: ['Indie', 'Festival', 'Directors'],
+  MovieTheory: ['Symbolism', 'Screenwriting', 'Editing'],
+  CinePhiles: ['General', 'Watchlist', 'Debate'],
+};
+const displayName = (username: string) =>
+  username
+    .replace(/[_\.]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ');
 
 const timeAgo = (createdAt: string): string => {
   const date = new Date(createdAt).getTime();
@@ -26,9 +40,9 @@ const mapPost = (p: SocialPost): Post => {
     id: String(p.id),
     user: {
       id: String(p.author.id),
-      name: p.author.username,
+      name: displayName(p.author.username),
       handle: p.author.username,
-      avatar: p.author.avatar_url || fallbackAvatar,
+      avatar: p.author.avatar_url || '',
     },
     imageUrl: images[0],
     imageUrls: images,
@@ -55,8 +69,15 @@ export const Communities = () => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
   const [whoToFollow, setWhoToFollow] = useState<SocialUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [communitySearch, setCommunitySearch] = useState('');
+  const [followBusyId, setFollowBusyId] = useState<number | null>(null);
+  const [chatLiveAvailable, setChatLiveAvailable] = useState(true);
 
   const [chatText, setChatText] = useState('');
+  const chatSocketRef = useRef<WebSocket | null>(null);
   const [postCaption, setPostCaption] = useState('');
   const [movieQuery, setMovieQuery] = useState('');
   const [movieResults, setMovieResults] = useState<any[]>([]);
@@ -66,19 +87,29 @@ export const Communities = () => {
     () => communities.find((c) => c.id === selectedCommunityId) || null,
     [communities, selectedCommunityId]
   );
+  const filteredCommunities = useMemo(() => {
+    const q = communitySearch.trim().toLowerCase();
+    if (!q) return communities;
+    return communities.filter((c) => c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q));
+  }, [communities, communitySearch]);
 
   const loadCommunities = async () => {
-    const [communityRes, usersRes] = await Promise.all([
-      socialApi.listCommunities(),
-      socialApi.getDiscoverUsers(20),
-    ]);
-    setCommunities(communityRes.communities);
-    if (communityId) {
-      setSelectedCommunityId(Number(communityId));
-    } else if (!selectedCommunityId && communityRes.communities.length > 0) {
-      setSelectedCommunityId(communityRes.communities[0].id);
+    setError('');
+    try {
+      const [communityRes, usersRes] = await Promise.all([
+        socialApi.listCommunities(),
+        socialApi.getDiscoverUsers(20),
+      ]);
+      setCommunities(communityRes.communities);
+      if (communityId) {
+        setSelectedCommunityId(Number(communityId));
+      } else if (!selectedCommunityId && communityRes.communities.length > 0) {
+        setSelectedCommunityId(communityRes.communities[0].id);
+      }
+      setWhoToFollow(usersRes.users);
+    } catch (e) {
+      setError((e as Error).message || 'Failed to load communities');
     }
-    setWhoToFollow(usersRes.users);
   };
 
   const loadCommunityDetail = async (communityId: number) => {
@@ -93,13 +124,48 @@ export const Communities = () => {
   };
 
   useEffect(() => {
-    loadCommunities().catch(console.error);
+    setLoading(true);
+    loadCommunities().finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     if (!selectedCommunityId) return;
     loadCommunityDetail(selectedCommunityId).catch(console.error);
   }, [selectedCommunityId]);
+
+  useEffect(() => {
+    if (!selectedCommunityId) return;
+    setChatLiveAvailable(true);
+    const socket = socialApi.connectCommunityChat(selectedCommunityId, {
+      onMessage: (message) => {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === message.id)) return prev;
+          return [...prev, message];
+        });
+      },
+      onError: () => {
+        setChatLiveAvailable(false);
+      },
+    });
+    chatSocketRef.current = socket;
+    return () => {
+      socket.close();
+      if (chatSocketRef.current === socket) chatSocketRef.current = null;
+    };
+  }, [selectedCommunityId]);
+
+  useEffect(() => {
+    if (!selectedCommunityId || chatLiveAvailable) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const rows = await socialApi.getCommunityMessages(selectedCommunityId);
+        setMessages(rows);
+      } catch {
+        // Keep fallback polling silent.
+      }
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, [selectedCommunityId, chatLiveAvailable]);
 
   const handleJoinToggle = async (community: CommunitySummary) => {
     if (community.joined) {
@@ -112,13 +178,25 @@ export const Communities = () => {
   };
 
   const handleFollow = async (userId: number) => {
-    await socialApi.followUser(userId);
-    setWhoToFollow((prev) => prev.filter((u) => u.id !== userId));
+    setFollowBusyId(userId);
+    try {
+      await socialApi.followUser(userId);
+      setWhoToFollow((prev) => prev.filter((u) => u.id !== userId));
+    } finally {
+      setFollowBusyId(null);
+    }
   };
 
   const handleSendChat = async () => {
     if (!selectedCommunityId || !chatText.trim()) return;
-    const row = await socialApi.sendCommunityMessage(selectedCommunityId, chatText.trim());
+    const message = chatText.trim();
+    const ws = chatSocketRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ message }));
+      setChatText('');
+      return;
+    }
+    const row = await socialApi.sendCommunityMessage(selectedCommunityId, message);
     setMessages((prev) => [...prev, row]);
     setChatText('');
   };
@@ -164,17 +242,50 @@ export const Communities = () => {
     return rows.map((c) => ({ id: String(c.id), username: c.author.username, text: c.content }));
   };
 
+  const refreshAll = async () => {
+    setRefreshing(true);
+    try {
+      await loadCommunities();
+      if (selectedCommunityId) await loadCommunityDetail(selectedCommunityId);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background pb-24 pt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <aside className="lg:col-span-1 space-y-3">
-            <h2 className="text-xl font-bold">Communities</h2>
-            {communities.map((c) => (
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Communities</h2>
+              <Button size="sm" variant="outline" className="border-white/20" onClick={refreshAll} disabled={refreshing}>
+                <RefreshCcw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                className="w-full bg-black/30 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm"
+                placeholder="Search communities"
+                value={communitySearch}
+                onChange={(e) => setCommunitySearch(e.target.value)}
+              />
+            </div>
+            {loading && <p className="text-sm text-gray-400">Loading communities...</p>}
+            {error && <p className="text-sm text-red-400">{error}</p>}
+            {filteredCommunities.map((c) => (
               <div key={c.id} className={`glassmorphism border rounded-xl p-3 ${selectedCommunityId === c.id ? 'border-primary/60' : 'border-white/10'}`}>
                 <button className="w-full text-left" onClick={() => { setSelectedCommunityId(c.id); navigate(`/community/${c.id}`); }}>
                   <p className="font-semibold">{c.name}</p>
                   <p className="text-xs text-secondary-foreground">{c.member_count} members</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(COMMUNITY_TOPICS[c.name] || ['Movies']).slice(0, 2).map((tag) => (
+                      <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full border border-white/15 text-gray-300 bg-white/5">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
                 </button>
                 <Button size="sm" className="mt-2 w-full" variant={c.joined ? 'secondary' : 'primary'} onClick={() => handleJoinToggle(c)}>
                   {c.joined ? 'Leave' : 'Join'}
@@ -187,6 +298,15 @@ export const Communities = () => {
             <section className="glassmorphism border border-white/10 rounded-xl p-4">
               <h3 className="font-bold text-lg">{selectedCommunity?.name || 'Community'}</h3>
               <p className="text-sm text-secondary-foreground mb-3">{selectedCommunity?.description}</p>
+              {selectedCommunity && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {(COMMUNITY_TOPICS[selectedCommunity.name] || ['Movies']).map((tag) => (
+                    <span key={tag} className="text-xs px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10 text-gray-100">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
@@ -241,10 +361,10 @@ export const Communities = () => {
                 {members.map((m) => (
                   <div key={m.id} className="flex items-center gap-2">
                     <button type="button" onClick={() => navigate(`/profile/${m.username}`)}>
-                      <img src={m.avatar_url || fallbackAvatar} className="w-8 h-8 rounded-full object-cover" />
+                      <Avatar src={m.avatar_url || ''} name={m.username} className="w-8 h-8" textClassName="text-[10px]" />
                     </button>
                     <button type="button" className="text-left" onClick={() => navigate(`/profile/${m.username}`)}>
-                      <p className="text-sm font-medium">{m.username}</p>
+                      <p className="text-sm font-medium">{displayName(m.username)}</p>
                       <p className="text-xs text-secondary-foreground line-clamp-1">{m.bio}</p>
                     </button>
                   </div>
@@ -258,10 +378,12 @@ export const Communities = () => {
                 {whoToFollow.map((u) => (
                   <div key={u.id} className="flex items-center justify-between gap-2">
                     <button type="button" className="flex items-center gap-2" onClick={() => navigate(`/profile/${u.username}`)}>
-                      <img src={u.avatar_url || fallbackAvatar} className="w-8 h-8 rounded-full object-cover" />
-                      <p className="text-sm">{u.username}</p>
+                      <Avatar src={u.avatar_url || ''} name={u.username} className="w-8 h-8" textClassName="text-[10px]" />
+                      <p className="text-sm">{displayName(u.username)}</p>
                     </button>
-                    <Button size="sm" onClick={() => handleFollow(u.id)}>Follow</Button>
+                    <Button size="sm" onClick={() => handleFollow(u.id)} disabled={followBusyId === u.id}>
+                      {followBusyId === u.id ? '...' : 'Follow'}
+                    </Button>
                   </div>
                 ))}
               </div>

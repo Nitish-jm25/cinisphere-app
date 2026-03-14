@@ -3,6 +3,7 @@ import { Button } from '../ui/Button';
 import { X, Mail, Lock, User, ArrowRight } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
+import { socialApi } from '../../services/socialApi';
 
 interface AuthModalProps {
     isOpen: boolean;
@@ -13,7 +14,7 @@ interface AuthModalProps {
 
 export const AuthModal = ({ isOpen, onClose, initialMode = 'signin', onSuccess }: AuthModalProps) => {
     const { login, register } = useAuth();
-    const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
+    const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(initialMode);
 
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -62,13 +63,22 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'signin', onSuccess }
         try {
             if (mode === 'signin') {
                 await login({ email, password });
-            } else {
+            } else if (mode === 'signup') {
                 await register({ username: name.trim(), email, password });
+            } else {
+                const result = await socialApi.requestPasswordReset(email.trim());
+                if (result.reset_url) {
+                    window.location.href = result.reset_url;
+                    return;
+                }
+                setSuccessMsg('If this account exists, a reset option is ready.');
+                setIsLoading(false);
+                return;
             }
 
             setIsLoading(false);
             setSuccessMsg(mode === 'signin' ? 'Login successful!' : 'Account created successfully!');
-            setTimeout(() => onSuccess(mode), 500);
+            setTimeout(() => onSuccess(mode === 'forgot' ? 'signin' : mode), 500);
         } catch (err: any) {
             setIsLoading(false);
             setError(err?.message || 'Something went wrong. Please try again.');
@@ -90,7 +100,11 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'signin', onSuccess }
                     <div className="text-center mb-8">
                         <h2 className="text-3xl font-bold mb-2">{mode === 'signin' ? 'Welcome Back' : 'Create Account'}</h2>
                         <p className="text-secondary-foreground text-sm">
-                            {mode === 'signin' ? 'Enter your details to access your account' : 'Join CiniSphere and discover your next favorite movie'}
+                            {mode === 'signin'
+                                ? 'Enter your details to access your account'
+                                : mode === 'signup'
+                                    ? 'Join CiniSphere and discover your next favorite movie'
+                                    : 'Enter your email to reset your password'}
                         </p>
                     </div>
 
@@ -116,13 +130,15 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'signin', onSuccess }
                             </div>
                         </div>
 
-                        <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-gray-300 ml-1">Password</label>
-                            <div className="relative">
-                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Lock className="w-5 h-5" /></div>
-                                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="********" className="w-full bg-background/50 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all" />
+                        {mode !== 'forgot' && (
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-gray-300 ml-1">Password</label>
+                                <div className="relative">
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Lock className="w-5 h-5" /></div>
+                                    <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="********" className="w-full bg-background/50 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all" />
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         {mode === 'signup' && (
                             <div className="space-y-1.5">
@@ -134,12 +150,28 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'signin', onSuccess }
                             </div>
                         )}
 
+                        {mode === 'signin' && (
+                            <div className="flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setMode('forgot');
+                                        setError('');
+                                        setSuccessMsg('');
+                                    }}
+                                    className="text-sm font-medium text-gray-300 hover:text-white transition-colors"
+                                >
+                                    Forgot password?
+                                </button>
+                            </div>
+                        )}
+
                         <Button type="submit" className="w-full py-6 text-base font-bold mt-6 shadow-lg shadow-primary/20 group" disabled={isLoading}>
                             {isLoading ? (
                                 <span className="animate-pulse">Processing...</span>
                             ) : (
                                 <>
-                                    {mode === 'signin' ? 'Sign In' : 'Create Account'}
+                                    {mode === 'signin' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Continue Reset'}
                                     <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
                                 </>
                             )}
@@ -149,8 +181,10 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'signin', onSuccess }
                     <div className="mt-8 text-center text-sm text-gray-400">
                         {mode === 'signin' ? (
                             <p>Don't have an account? <button onClick={() => setMode('signup')} className="text-white font-semibold hover:text-primary transition-colors">Sign Up</button></p>
-                        ) : (
+                        ) : mode === 'signup' ? (
                             <p>Already have an account? <button onClick={() => setMode('signin')} className="text-white font-semibold hover:text-primary transition-colors">Sign In</button></p>
+                        ) : (
+                            <p>Remembered your password? <button onClick={() => setMode('signin')} className="text-white font-semibold hover:text-primary transition-colors">Back to Sign In</button></p>
                         )}
                     </div>
                 </div>

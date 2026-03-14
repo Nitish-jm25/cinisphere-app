@@ -76,6 +76,11 @@ export const SearchBar = () => {
     }, [debouncedQuery, isDiscoverPage]);
 
     const hasResults = movies.length > 0 || users.length > 0 || communities.length > 0;
+    const movieYearLabel = (releaseDate?: string) => {
+        const d = new Date(releaseDate || '');
+        const year = d.getFullYear();
+        return Number.isFinite(year) ? String(year) : 'Unknown';
+    };
 
     return (
         <div className="relative w-full max-w-sm ml-4 md:ml-8" ref={containerRef}>
@@ -128,12 +133,19 @@ export const SearchBar = () => {
                                             <div key={movie.id} className="flex gap-3 p-2 hover:bg-white/10 rounded-lg cursor-pointer transition-colors" onClick={() => { navigate(`/movie/${movie.id}`); setIsOpen(false); setQuery(''); }}>
                                                 <div className="w-10 h-14 bg-gray-800 rounded object-cover overflow-hidden flex-shrink-0">
                                                     {movie.poster_path && (
-                                                        <img src={movie.poster_path.startsWith('http') ? movie.poster_path : `https://image.tmdb.org/t/p/w200${movie.poster_path}`} alt={movie.title} className="w-full h-full object-cover" />
+                                                        <img
+                                                            src={movie.poster_path.startsWith('http') ? movie.poster_path : `https://image.tmdb.org/t/p/w200${movie.poster_path}`}
+                                                            alt={movie.title}
+                                                            className="w-full h-full object-cover"
+                                                            onError={(e) => {
+                                                                e.currentTarget.src = '/vite.svg';
+                                                            }}
+                                                        />
                                                     )}
                                                 </div>
                                                 <div className="flex flex-col justify-center">
                                                     <span className="font-bold text-sm text-white line-clamp-1">{movie.title}</span>
-                                                    <span className="text-xs text-gray-400">{movie.release_date.split('-')[0]}</span>
+                                                    <span className="text-xs text-gray-400">{movieYearLabel(movie.release_date)}</span>
                                                 </div>
                                             </div>
                                         ))}

@@ -12,12 +12,13 @@ it detects an empty/undersized dataset.
 """
 
 import sys
+import os
 import pandas as pd
 from pymongo import MongoClient
 
 # ─── Configuration ────────────────────────────────────────────
 MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "movie_recommendation_db"
+DB_NAME = os.getenv("DATABASE_NAME", "cinisphere")
 COLLECTION_NAME = "movies"
 
 

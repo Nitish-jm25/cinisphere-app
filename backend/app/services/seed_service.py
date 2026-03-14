@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.social_models import (
     Community,
     CommunityMembership,
+    CommunityMessage,
     CommunityPost,
     Post,
     PostMedia,
@@ -46,6 +47,34 @@ COMMUNITIES = [
     ("CinePhiles", "General movie lovers community.", "https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=500&auto=format&fit=crop"),
 ]
 
+COMMUNITY_SEED_MESSAGES = {
+    "Anime": [
+        "Best first anime movie for newcomers?",
+        "Which Makoto Shinkai film has your favorite visuals?",
+        "Drop your top 3 anime soundtracks.",
+    ],
+    "Underrated": [
+        "Name one hidden gem everyone should watch this week.",
+        "Underrated thriller suggestions?",
+        "Which overlooked 2010s movie deserves rewatch?",
+    ],
+    "IndieCinema": [
+        "Favorite low-budget film with top storytelling?",
+        "Festival recommendation thread starts here.",
+        "Which indie film surprised you recently?",
+    ],
+    "MovieTheory": [
+        "What is your favorite use of color symbolism in film?",
+        "Best nonlinear screenplay examples?",
+        "Share one scene where editing changed the emotional tone.",
+    ],
+    "CinePhiles": [
+        "Weekend watchlist check-in. What are you watching?",
+        "One movie you can rewatch forever?",
+        "Most anticipated release this month?",
+    ],
+}
+
 POST_IMAGES = [
     "https://image.tmdb.org/t/p/w780/qJ2tW6WMUDux911r6m7haRef0WH.jpg",  # The Dark Knight
     "https://image.tmdb.org/t/p/w780/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",  # Interstellar
@@ -77,6 +106,10 @@ def seed_social_data(db: Session) -> None:
     for idx, (username, bio, avatar) in enumerate(SEED_USERS):
         existing = db.query(User).filter(User.username == username).first()
         if existing:
+            # Keep seeded users polished and consistent.
+            existing.bio = bio
+            existing.avatar_url = avatar
+            db.add(existing)
             user_rows.append(existing)
             continue
         row = User(
@@ -168,5 +201,43 @@ def seed_social_data(db: Session) -> None:
             )
             if not exists_link:
                 db.add(CommunityPost(community_id=m.community_id, post_id=post.id))
+
+    # Ensure each community has enough linked posts from its members.
+    for cname, community in community_map.items():
+        link_count = db.query(func.count(CommunityPost.id)).filter(CommunityPost.community_id == community.id).scalar() or 0
+        if link_count >= 8:
+            continue
+
+        member_ids = [uid for (uid,) in db.query(CommunityMembership.user_id).filter(CommunityMembership.community_id == community.id).all()]
+        if not member_ids:
+            continue
+        member_posts = db.query(Post).filter(Post.user_id.in_(member_ids)).order_by(Post.created_at.desc()).all()
+        for post in member_posts:
+            exists_link = (
+                db.query(CommunityPost)
+                .filter(CommunityPost.community_id == community.id, CommunityPost.post_id == post.id)
+                .first()
+            )
+            if exists_link:
+                continue
+            db.add(CommunityPost(community_id=community.id, post_id=post.id))
+            link_count += 1
+            if link_count >= 8:
+                break
+
+    # Seed realistic starter chats per community.
+    for cname, community in community_map.items():
+        existing_msgs = db.query(func.count(CommunityMessage.id)).filter(CommunityMessage.community_id == community.id).scalar() or 0
+        if existing_msgs >= 5:
+            continue
+
+        member_ids = [uid for (uid,) in db.query(CommunityMembership.user_id).filter(CommunityMembership.community_id == community.id).all()]
+        if not member_ids:
+            continue
+
+        prompts = COMMUNITY_SEED_MESSAGES.get(cname, [])
+        for idx, text in enumerate(prompts):
+            user_id = member_ids[idx % len(member_ids)]
+            db.add(CommunityMessage(community_id=community.id, user_id=user_id, message=text))
 
     db.commit()

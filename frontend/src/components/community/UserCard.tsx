@@ -1,5 +1,6 @@
 import { UserPlus, Check } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { Avatar } from '../ui/Avatar';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -42,11 +43,11 @@ export const UserCard = ({ user }: UserCardProps) => {
         <div className="group relative w-[200px] md:w-[240px] flex flex-col items-center bg-white/5 backdrop-blur-md border border-white/10 rounded-xl p-6 transition-all duration-300 hover:scale-[1.02] hover:bg-white/10 hover:border-white/20 select-none">
             <button type="button" className="relative mb-4" onClick={() => navigate(`/profile/${user.username}`)}>
                 <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                <img
+                <Avatar
                     src={user.avatarUrl}
-                    alt={user.username}
-                    className="relative w-24 h-24 rounded-full object-cover border-2 border-white/20 group-hover:border-primary transition-colors"
-                    loading="lazy"
+                    name={user.username}
+                    className="relative w-24 h-24 border-2 border-white/20 group-hover:border-primary transition-colors"
+                    textClassName="text-2xl"
                 />
             </button>
 

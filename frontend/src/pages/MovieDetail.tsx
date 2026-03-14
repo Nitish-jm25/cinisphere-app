@@ -8,6 +8,7 @@ import { tmdbService, type Movie, MOCK_GENRES } from '../services/tmdb';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
 import { MovieRow } from '../components/movies/MovieRow';
+import { shareUrl } from '../utils/share';
 
 export const MovieDetail = () => {
     const { id } = useParams();
@@ -61,7 +62,7 @@ export const MovieDetail = () => {
         );
     }
 
-    let bgImage = 'https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=2070&auto=format&fit=crop';
+    let bgImage = '/vite.svg';
     if (imageLoaded && movie.backdrop_path) {
         bgImage = movie.backdrop_path.startsWith('http')
             ? movie.backdrop_path
@@ -70,12 +71,21 @@ export const MovieDetail = () => {
 
     const posterImage = movie.poster_path
         ? movie.poster_path.startsWith('http') ? movie.poster_path : `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-        : 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=500&auto=format&fit=crop';
+        : '/vite.svg';
+    const releaseYear = (() => {
+        const d = new Date(movie.release_date || '');
+        const year = d.getFullYear();
+        return Number.isFinite(year) ? String(year) : 'Unknown';
+    })();
 
     // Format runtime
     const hours = movie.runtime ? Math.floor(movie.runtime / 60) : 0;
     const minutes = movie.runtime ? movie.runtime % 60 : 0;
     const movieGenres = movie.genre_ids || [];
+    const handleShareMovie = async () => {
+        const url = `${window.location.origin}/movie/${movie.id}`;
+        await shareUrl(`${movie.title} on CineSphere`, movie.overview || 'Movie details', url);
+    };
 
     return (
         <div className="min-h-screen bg-background pb-20 mt-[-64px]">
@@ -86,7 +96,7 @@ export const MovieDetail = () => {
                 className="hidden"
                 onLoad={() => setImageLoaded(true)}
                 onError={(e) => {
-                    e.currentTarget.src = 'https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=2070&auto=format&fit=crop';
+                    e.currentTarget.src = '/vite.svg';
                     setImageLoaded(true);
                 }}
                 alt=""
@@ -127,7 +137,7 @@ export const MovieDetail = () => {
                         alt={movie.title}
                         className="w-full h-auto object-cover border border-white/10 rounded-xl"
                         onError={(e) => {
-                            e.currentTarget.src = 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=500&auto=format&fit=crop';
+                            e.currentTarget.src = '/vite.svg';
                         }}
                     />
                 </div>
@@ -147,7 +157,7 @@ export const MovieDetail = () => {
                             </span>
                             <span className="flex items-center gap-1">
                                 <Calendar className="w-4 h-4" />
-                                {new Date(movie.release_date).getFullYear()}
+                                {releaseYear}
                             </span>
                             <span className="flex items-center gap-1">
                                 <Clock className="w-4 h-4" />
@@ -194,6 +204,7 @@ export const MovieDetail = () => {
                             variant="outline"
                             size="lg"
                             className="gap-2 glassmorphism hover:bg-white/10 border-white/10 text-white w-12 sm:w-auto p-0 sm:px-4 flex justify-center"
+                            onClick={handleShareMovie}
                         >
                             <Share2 className="w-5 h-5" />
                             <span className="hidden sm:inline">Share</span>
@@ -223,7 +234,7 @@ export const MovieDetail = () => {
                                 <div key={i} className="aspect-video relative rounded-xl overflow-hidden glassmorphism group cursor-pointer border border-white/10 shadow-lg">
                                     <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 opacity-30 mix-blend-overlay" />
                                     <img
-                                        src={`https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=1000&auto=format&fit=crop`}
+                                        src={`/vite.svg`}
                                         alt="Trailer Thumbnail"
                                         className="w-full h-full object-cover opacity-70 group-hover:scale-105 transition-transform duration-500"
                                     />
@@ -242,7 +253,7 @@ export const MovieDetail = () => {
                             {movie.images?.backdrops?.slice(0, 2).map((_, i) => (
                                 <div key={i} className="aspect-video rounded-xl overflow-hidden border border-white/10 hover:border-white/30 transition-colors shadow-lg group">
                                     <img
-                                        src={`https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=1000&auto=format&fit=crop`}
+                                        src={`/vite.svg`}
                                         alt="Scene Thumbnail"
                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                     />

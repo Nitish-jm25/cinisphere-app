@@ -12,6 +12,12 @@ interface MovieCardProps {
 
 export const MovieCard = ({ movie, className }: MovieCardProps) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const movieYear = (() => {
+        const d = new Date(movie.release_date || '');
+        const year = d.getFullYear();
+        return Number.isFinite(year) ? String(year) : 'Unknown';
+    })();
+    const movieRating = Number.isFinite(movie.vote_average) ? movie.vote_average : 0;
 
     // The TMDB API returns paths starting with '/', so we append it to the base image URL.
     // If it's already a full URL (from our mocks), we use it directly.
@@ -19,7 +25,7 @@ export const MovieCard = ({ movie, className }: MovieCardProps) => {
         ? movie.poster_path.startsWith('http')
             ? movie.poster_path
             : `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-        : 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=500&auto=format&fit=crop';
+        : '/vite.svg';
 
     return (
         <>
@@ -38,7 +44,7 @@ export const MovieCard = ({ movie, className }: MovieCardProps) => {
                         loading="lazy"
                         onError={(e) => {
                             // Fallback strategy if mock images fail
-                            e.currentTarget.src = 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=500&auto=format&fit=crop';
+                            e.currentTarget.src = '/vite.svg';
                         }}
                     />
 
@@ -59,14 +65,14 @@ export const MovieCard = ({ movie, className }: MovieCardProps) => {
                     {/* Rating Badge */}
                     <div className="absolute top-2 right-2 glassmorphism px-2 py-1 rounded-md flex items-center gap-1 shadow-md">
                         <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                        <span className="text-xs font-bold">{movie.vote_average.toFixed(1)}</span>
+                        <span className="text-xs font-bold">{movieRating.toFixed(1)}</span>
                     </div>
                 </div>
 
                 <div>
-                    <h3 className="font-semibold text-sm md:text-base line-clamp-1 group-hover:text-primary transition-colors">{movie.title}</h3>
+                    <h3 className="font-semibold text-sm md:text-base line-clamp-2 group-hover:text-primary transition-colors">{movie.title}</h3>
                     <p className="text-xs text-secondary-foreground mb-1">
-                        {new Date(movie.release_date).getFullYear()}
+                        {movieYear}
                     </p>
                     <p className="text-xs text-gray-400 line-clamp-1">
                         {movie.genre_ids.map(id => MOCK_GENRES[id] || '').filter(Boolean).join(', ')}

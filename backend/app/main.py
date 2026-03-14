@@ -12,10 +12,13 @@ from app.api.routes import auth, recommendation, tailor_fit, tmdb
 from app.api.routes.chat import router as chat_router
 from app.api.routes.communities import router as communities_router
 from app.api.routes.comments import router as comments_router
+from app.api.routes.moderation import router as moderation_router
+from app.api.routes.notifications import router as notifications_router
 from app.api.routes.posts import router as posts_router
 from app.api.routes.social_auth import router as social_auth_router
 from app.api.routes.users import router as users_router
 from app.core import dependencies
+from app.core.config import settings
 from app.db.sql import SessionLocal, init_db
 from app.services.ml_service import MLService
 from app.services.seed_service import seed_social_data
@@ -53,12 +56,16 @@ app.include_router(posts_router)
 app.include_router(comments_router)
 app.include_router(communities_router)
 app.include_router(chat_router)
+app.include_router(notifications_router)
+app.include_router(moderation_router)
 
 # API-prefixed aliases for organized route grouping.
 app.include_router(users_router, prefix="/api")
 app.include_router(posts_router, prefix="/api")
 app.include_router(communities_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
+app.include_router(notifications_router, prefix="/api")
+app.include_router(moderation_router, prefix="/api")
 uploads_dir = Path(__file__).resolve().parents[1] / "uploads"
 uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
@@ -75,7 +82,8 @@ def startup_event():
     init_db()
     db = SessionLocal()
     try:
-        seed_social_data(db)
+        if settings.SOCIAL_SEED_ENABLED:
+            seed_social_data(db)
     finally:
         db.close()
     print("ML Service initialized")

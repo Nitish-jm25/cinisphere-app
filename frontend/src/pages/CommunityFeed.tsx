@@ -1,23 +1,35 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FeedPost, type Post } from '../components/community/FeedPost';
+import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
-import { PenSquare, Users, UserPlus, X, Upload } from 'lucide-react';
+import { PenSquare, Users, UserPlus, X, Upload, RefreshCcw, Flame, Clock3 } from 'lucide-react';
 
 import { dataService, type User } from '../services/mockData';
-import { socialApi, type SocialPost } from '../services/socialApi';
+import { socialApi, type CommunitySummary, type SocialPost } from '../services/socialApi';
 import { tmdbService, type Movie } from '../services/tmdb';
 import { resolvePostImages } from '../utils/postImages';
 import { useAuth } from '../context/AuthContext';
 
-const MOCK_COMMUNITIES = [
-    { id: 'c1', name: 'Sci-Fi Explorers', members: 12500, image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=500&auto=format&fit=crop' },
-    { id: 'c2', name: 'Late Night Thrillers', members: 8300, image: 'https://images.unsplash.com/photo-1505322022379-7c3353ee6291?q=80&w=500&auto=format&fit=crop' },
-    { id: 'c3', name: 'Anime Enthusiasts', members: 22000, image: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=500&auto=format&fit=crop' }
-];
+const DEFAULT_COMMUNITY_IMAGE = 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=500&auto=format&fit=crop';
+const inferCommunityTags = (name: string): string[] => {
+    const n = name.toLowerCase();
+    if (n.includes('anime')) return ['Anime', 'Visuals'];
+    if (n.includes('thriller')) return ['Thriller', 'Mystery'];
+    if (n.includes('indie')) return ['Indie', 'Festival'];
+    if (n.includes('theory')) return ['Theory', 'Analysis'];
+    if (n.includes('sci')) return ['Sci-Fi', 'Space'];
+    return ['Movies', 'Community'];
+};
 
-const fallbackAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop';
+const displayName = (username: string) =>
+    username
+        .replace(/[_\.]+/g, ' ')
+        .split(' ')
+        .filter(Boolean)
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+        .join(' ');
 
 const timeAgo = (createdAt: string): string => {
     const date = new Date(createdAt).getTime();
@@ -40,9 +52,9 @@ const mapPost = (p: SocialPost): Post => {
         id: String(p.id),
         user: {
             id: String(p.author.id),
-            name: p.author.username,
+            name: displayName(p.author.username),
             handle: p.author.username,
-            avatar: p.author.avatar_url || fallbackAvatar,
+            avatar: p.author.avatar_url || '',
         },
         imageUrl: images[0],
         imageUrls: images,
@@ -60,6 +72,9 @@ export const CommunityFeed = () => {
     const [posts, setPosts] = useState<Post[]>([]);
     const [suggestedUsers, setSuggestedUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [feedView, setFeedView] = useState<'latest' | 'popular'>('latest');
+    const [feedError, setFeedError] = useState('');
 
     const [composerOpen, setComposerOpen] = useState(false);
     const [movieQuery, setMovieQuery] = useState('');
@@ -68,18 +83,25 @@ export const CommunityFeed = () => {
     const [caption, setCaption] = useState('');
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [submitting, setSubmitting] = useState(false);
+    const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+    const [followBusyId, setFollowBusyId] = useState<string | null>(null);
+    const [communities, setCommunities] = useState<CommunitySummary[]>([]);
 
     const loadFeed = async () => {
+        setFeedError('');
         setLoading(true);
         try {
             const [usersData, feedData] = await Promise.all([
                 dataService.getSuggestedFriends(),
                 socialApi.getFeed(30, 0),
             ]);
+            const communitiesData = await socialApi.listCommunities();
             setPosts(feedData.map(mapPost));
             setSuggestedUsers(usersData.slice(0, 4));
+            setCommunities(communitiesData.communities.slice(0, 3));
         } catch (error) {
             console.error('Failed to load feed', error);
+            setFeedError('Could not load feed right now.');
             setPosts([]);
         } finally {
             setLoading(false);
@@ -177,6 +199,33 @@ export const CommunityFeed = () => {
         setPosts((prev) => prev.filter((p) => p.id !== postId));
     };
 
+    const handleFollow = async (userId: string) => {
+        if (!authUser?.id || followBusyId) return;
+        setFollowBusyId(userId);
+        try {
+            await socialApi.followUser(Number(userId));
+            setFollowingIds((prev) => new Set([...prev, userId]));
+        } catch (error) {
+            alert((error as Error).message || 'Follow action failed');
+        } finally {
+            setFollowBusyId(null);
+        }
+    };
+
+    const refreshFeed = async () => {
+        setRefreshing(true);
+        try {
+            await loadFeed();
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
+    const displayedPosts = [...posts].sort((a, b) => {
+        if (feedView === 'popular') return b.likes - a.likes;
+        return 0;
+    });
+
     return (
         <div className="min-h-screen bg-background pt-20 pb-24">
             {composerOpen && (
@@ -253,12 +302,39 @@ export const CommunityFeed = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 relative">
                         <div className="flex items-center justify-between mb-8 sticky top-[72px] bg-background/80 backdrop-blur-xl z-10 py-4 -mx-4 px-4 sm:mx-0 sm:px-0 border-b lg:border-none border-white/10">
-                            <h1 className="text-2xl font-bold tracking-tight">Community Feed</h1>
-                            <Button className="gap-2 shadow-lg shadow-primary/20" onClick={() => setComposerOpen(true)}>
-                                <PenSquare className="w-4 h-4" />
-                                <span className="hidden sm:inline">Create Post</span>
-                                <span className="sm:hidden">Post</span>
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                <h1 className="text-2xl font-bold tracking-tight">Community Feed</h1>
+                                <button
+                                    type="button"
+                                    className={`text-xs px-3 py-1.5 rounded-full border transition ${feedView === 'latest' ? 'border-primary text-white bg-primary/10' : 'border-white/15 text-gray-300'}`}
+                                    onClick={() => setFeedView('latest')}
+                                >
+                                    <span className="inline-flex items-center gap-1"><Clock3 className="w-3 h-3" /> Latest</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`text-xs px-3 py-1.5 rounded-full border transition ${feedView === 'popular' ? 'border-primary text-white bg-primary/10' : 'border-white/15 text-gray-300'}`}
+                                    onClick={() => setFeedView('popular')}
+                                >
+                                    <span className="inline-flex items-center gap-1"><Flame className="w-3 h-3" /> Popular</span>
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    className="gap-2 border-white/20 hover:bg-white/10"
+                                    onClick={refreshFeed}
+                                    disabled={refreshing}
+                                >
+                                    <RefreshCcw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                                    Refresh
+                                </Button>
+                                <Button className="gap-2 shadow-lg shadow-primary/20" onClick={() => setComposerOpen(true)}>
+                                    <PenSquare className="w-4 h-4" />
+                                    <span className="hidden sm:inline">Create Post</span>
+                                    <span className="sm:hidden">Post</span>
+                                </Button>
+                            </div>
                         </div>
 
                         <div className="space-y-6">
@@ -276,8 +352,18 @@ export const CommunityFeed = () => {
                                         <Skeleton className="w-full h-16" />
                                     </div>
                                 ))
+                            ) : displayedPosts.length === 0 ? (
+                                <div className="glassmorphism rounded-xl border border-white/10 p-8 text-center">
+                                    <p className="text-white font-semibold mb-2">No posts yet</p>
+                                    <p className="text-sm text-gray-400 mb-4">Start the conversation with your first movie post.</p>
+                                    <Button className="gap-2" onClick={() => setComposerOpen(true)}>
+                                        <PenSquare className="w-4 h-4" />
+                                        Create First Post
+                                    </Button>
+                                    {feedError && <p className="text-xs text-red-400 mt-4">{feedError}</p>}
+                                </div>
                             ) : (
-                                posts.map((post, idx) => (
+                                displayedPosts.map((post, idx) => (
                                     <FeedPost
                                         key={post.id}
                                         post={post}
@@ -302,12 +388,19 @@ export const CommunityFeed = () => {
                                     Communities for you
                                 </h3>
                                 <div className="space-y-4">
-                                    {MOCK_COMMUNITIES.map(comm => (
-                                        <div key={comm.id} className="flex gap-3 items-center group cursor-pointer transition-colors hover:bg-white/5 p-2 -mx-2 rounded-lg">
-                                            <img src={comm.image} alt={comm.name} className="w-12 h-12 rounded-lg object-cover" />
+                                    {communities.map(comm => (
+                                        <div key={comm.id} className="flex gap-3 items-center group cursor-pointer transition-colors hover:bg-white/5 p-2 -mx-2 rounded-lg" onClick={() => navigate(`/community/${comm.id}`)}>
+                                            <img src={comm.image_url || DEFAULT_COMMUNITY_IMAGE} alt={comm.name} className="w-12 h-12 rounded-lg object-cover" />
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-bold text-white group-hover:text-primary transition-colors truncate">{comm.name}</p>
-                                                <p className="text-xs text-secondary-foreground">{(comm.members / 1000).toFixed(1)}k members</p>
+                                                <p className="text-xs text-secondary-foreground">{(comm.member_count / 1000).toFixed(1)}k members</p>
+                                                <div className="mt-1 flex gap-1">
+                                                    {inferCommunityTags(comm.name).slice(0, 2).map((tag: string) => (
+                                                        <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded border border-white/15 text-gray-300 bg-white/5">
+                                                            {tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -334,14 +427,20 @@ export const CommunityFeed = () => {
                                         suggestedUsers.map(user => (
                                             <div key={user.id} className="flex items-center justify-between gap-3 group">
                                                 <button type="button" className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer text-left" onClick={() => navigate(`/profile/${user.username}`)}>
-                                                    <img src={user.avatarUrl} alt={user.username} className="w-10 h-10 rounded-full object-cover" />
+                                                    <Avatar src={user.avatarUrl} name={user.username} className="w-10 h-10" textClassName="text-xs" />
                                                     <div className="min-w-0">
-                                                        <p className="text-sm font-bold text-white group-hover:underline truncate">{user.username}</p>
+                                                        <p className="text-sm font-bold text-white group-hover:underline truncate">{displayName(user.username)}</p>
                                                         <p className="text-xs text-secondary-foreground truncate">@{user.username}</p>
                                                     </div>
                                                 </button>
-                                                <Button size="sm" variant="outline" className="h-8 px-3 text-xs glassmorphism hover:bg-white/10 border-white/20">
-                                                    Follow
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 px-3 text-xs glassmorphism hover:bg-white/10 border-white/20"
+                                                    disabled={followBusyId === user.id || followingIds.has(user.id)}
+                                                    onClick={() => handleFollow(user.id)}
+                                                >
+                                                    {followingIds.has(user.id) ? 'Following' : (followBusyId === user.id ? '...' : 'Follow')}
                                                 </Button>
                                             </div>
                                         ))

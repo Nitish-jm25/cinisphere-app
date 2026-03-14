@@ -37,6 +37,11 @@ export const HeroBanner = ({ movie, loading }: HeroBannerProps) => {
             </div>
         );
     }
+    const releaseYear = (() => {
+        const d = new Date(movie.release_date || '');
+        const year = d.getFullYear();
+        return Number.isFinite(year) ? String(year) : 'Unknown';
+    })();
 
     let bgImage = 'https://images.unsplash.com/photo-1626814026160-2237a95fc5a0?q=80&w=2070&auto=format&fit=crop';
 
@@ -70,7 +75,7 @@ export const HeroBanner = ({ movie, loading }: HeroBannerProps) => {
 
                     <div className="flex items-center gap-4 text-sm font-medium text-gray-300">
                         <span className="text-green-400 font-bold">{Math.round(movie.vote_average * 10)}% Match</span>
-                        <span>{new Date(movie.release_date).getFullYear()}</span>
+                        <span>{releaseYear}</span>
                         <span className="border border-gray-600 px-1 hover:border-white transition-colors cursor-default">HD</span>
                     </div>
 

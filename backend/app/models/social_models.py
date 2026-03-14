@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.db.sql import Base
@@ -15,6 +15,11 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     bio = Column(Text, nullable=False, default="")
     avatar_url = Column(String(1024), nullable=True)
+    is_email_verified = Column(Boolean, nullable=False, default=False)
+    email_verification_token_hash = Column(String(255), nullable=True, index=True)
+    email_verification_expires_at = Column(DateTime, nullable=True)
+    password_reset_token_hash = Column(String(255), nullable=True, index=True)
+    password_reset_expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -111,3 +116,39 @@ class CommunityPost(Base):
     community_id = Column(Integer, ForeignKey("communities.id", ondelete="CASCADE"), nullable=False, index=True)
     post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    type = Column(String(40), nullable=False, index=True)
+    resource_id = Column(Integer, nullable=True, index=True)
+    message = Column(String(280), nullable=False, default="")
+    is_read = Column(Boolean, nullable=False, default=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
+class UserBlock(Base):
+    __tablename__ = "user_blocks"
+    __table_args__ = (UniqueConstraint("blocker_id", "blocked_id", name="uq_user_block_pair"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    blocker_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    blocked_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ModerationReport(Base):
+    __tablename__ = "moderation_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    reporter_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    target_post_id = Column(Integer, ForeignKey("posts.id", ondelete="SET NULL"), nullable=True, index=True)
+    reason = Column(String(120), nullable=False)
+    details = Column(Text, nullable=False, default="")
+    status = Column(String(32), nullable=False, default="open", index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
