@@ -294,12 +294,16 @@ def _mongo_mood_picks(
     query: dict = {
         "title": {"$nin": [None, ""]},
         "poster_path": {"$nin": [None, "", "/vite.svg"]},
-        "vote_average": {"$gte": 6.8},
-        "vote_count": {"$gte": 80},
+        "vote_average": {"$gte": 5.0},
+        "vote_count": {"$gte": 10},
     }
     lang = (language or "").strip().lower()
     if lang:
         query["original_language"] = lang
+
+    desired_genres = _parse_genre_ids(genres_csv, mood, mindset)
+    if desired_genres:
+        query["genre_ids"] = {"$in": list(desired_genres)}
 
     pool = list(
         _movies_collection.find(query, {"_id": 0})
@@ -314,7 +318,6 @@ def _mongo_mood_picks(
             .limit(600)
         )
 
-    desired_genres = _parse_genre_ids(genres_csv, mood, mindset)
     scored: list[tuple[float, dict]] = []
     for doc in pool:
         item = _to_tmdb_result(doc)
