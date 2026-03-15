@@ -379,6 +379,13 @@ export const socialApi = {
     return apiFetch<{ communities: CommunitySummary[] }>('/communities');
   },
 
+  async createCommunity(payload: { name: string; description?: string }) {
+    return apiFetch<CommunitySummary>('/communities', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async joinCommunity(communityId: number) {
     return apiFetch<{ success: boolean; message: string }>(`/communities/${communityId}/join`, {
       method: 'POST',

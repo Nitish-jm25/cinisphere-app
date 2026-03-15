@@ -5,6 +5,7 @@ export interface OnboardingData {
     genres: string[];
     languages: string[];
     mood: string | null;
+    mindset: string | null;
     purpose: string | null;
 }
 
@@ -32,6 +33,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         genres: [],
         languages: [],
         mood: null,
+        mindset: null,
         purpose: null,
     });
 

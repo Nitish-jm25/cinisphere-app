@@ -59,6 +59,12 @@ _MOOD_TO_GENRE_IDS = {
     "excited": {28, 12, 878, 53},
     "relaxed": {35, 18, 99},
 }
+_MINDSET_TO_GENRE_IDS = {
+    "learn": {99, 36, 18},           # Documentary, History, Drama
+    "escape": {14, 12, 878, 16},     # Fantasy, Adventure, Sci-Fi, Animation
+    "laugh": {35, 10751},            # Comedy, Family
+    "action": {28, 53, 12},          # Action, Thriller, Adventure
+}
 
 
 def _extract_genre_ids(genres_raw) -> list[int]:
@@ -260,7 +266,7 @@ def _mongo_movie_credits(movie_id: int) -> dict:
     return {"id": movie_id, "cast": cast, "crew": crew}
 
 
-def _parse_genre_ids(genres_csv: str | None, mood: str | None) -> set[int]:
+def _parse_genre_ids(genres_csv: str | None, mood: str | None, mindset: str | None = None) -> set[int]:
     out: set[int] = set()
     if genres_csv:
         for raw in str(genres_csv).split(","):
@@ -272,11 +278,14 @@ def _parse_genre_ids(genres_csv: str | None, mood: str | None) -> set[int]:
                 out.add(gid)
     mood_key = (mood or "").strip().lower()
     out.update(_MOOD_TO_GENRE_IDS.get(mood_key, set()))
+    mindset_key = (mindset or "").strip().lower()
+    out.update(_MINDSET_TO_GENRE_IDS.get(mindset_key, set()))
     return out
 
 
 def _mongo_mood_picks(
     mood: str | None,
+    mindset: str | None,
     language: str | None,
     genres_csv: str | None,
     page: int = 1,
@@ -305,7 +314,7 @@ def _mongo_mood_picks(
             .limit(600)
         )
 
-    desired_genres = _parse_genre_ids(genres_csv, mood)
+    desired_genres = _parse_genre_ids(genres_csv, mood, mindset)
     scored: list[tuple[float, dict]] = []
     for doc in pool:
         item = _to_tmdb_result(doc)
@@ -502,11 +511,12 @@ def popular():
 @router.get("/mood-picks")
 def mood_picks(
     mood: str | None = Query(default=None),
+    mindset: str | None = Query(default=None),
     language: str | None = Query(default=None),
     genres: str | None = Query(default=None),
     page: int = Query(default=1, ge=1, le=500),
 ):
-    return _mongo_mood_picks(mood=mood, language=language, genres_csv=genres, page=page)
+    return _mongo_mood_picks(mood=mood, mindset=mindset, language=language, genres_csv=genres, page=page)
 
 
 @router.get("/discover/tamil")
@@ -522,8 +532,8 @@ def discover_tamil(page: int = Query(default=1, ge=1, le=500)):
     return _mongo_list(
         {
             "original_language": {"$regex": "^(ta|tamil)$", "$options": "i"},
-            "vote_average": {"$gte": 6.8},
-            "vote_count": {"$gte": 80},
+            "vote_average": {"$gte": 5.0},
+            "vote_count": {"$gte": 10},
         },
         [("vote_average", -1), ("vote_count", -1), ("popularity", -1), ("release_date", -1)],
         page=page,

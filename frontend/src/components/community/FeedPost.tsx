@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { Button } from '../ui/Button';
 import { Avatar } from '../ui/Avatar';
+import { Skeleton } from '../ui/Skeleton';
 import { cn } from '../../utils/cn';
 import { shareUrl } from '../../utils/share';
 
@@ -44,7 +45,7 @@ interface FeedPostProps {
     onDeletePost?: (postId: string) => Promise<void> | void;
 }
 
-export const FeedPost = ({ post, className, style, onLikeToggle, onAddComment, onLoadComments, canDelete = false, onDeletePost }: FeedPostProps) => {
+export const FeedPost = React.memo(({ post, className, style, onLikeToggle, onAddComment, onLoadComments, canDelete = false, onDeletePost }: FeedPostProps) => {
     const navigate = useNavigate();
     const [liked, setLiked] = useState(post.isLikedByMe || false);
     const [saved, setSaved] = useState(post.isSavedByMe || false);
@@ -56,6 +57,7 @@ export const FeedPost = ({ post, className, style, onLikeToggle, onAddComment, o
     const [currentImage, setCurrentImage] = useState(0);
     const [menuOpen, setMenuOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [imageLoaded, setImageLoaded] = useState(false);
 
     const images = useMemo(() => (post.imageUrls && post.imageUrls.length ? post.imageUrls : [post.imageUrl]), [post.imageUrl, post.imageUrls]);
 
@@ -118,12 +120,13 @@ export const FeedPost = ({ post, className, style, onLikeToggle, onAddComment, o
         }
     };
 
-
-
     const handleShare = async () => {
         const url = `${window.location.origin}/feed?post=${post.id}`;
         await shareUrl(`${post.user.name}'s post`, post.content.slice(0, 120), url);
     };
+
+    const currentImageUrl = images[currentImage];
+
     return (
         <div style={style} className={cn('glassmorphism rounded-xl overflow-hidden border border-white/10 shadow-lg', className)}>
             <div className="flex items-center justify-between p-4">
@@ -162,25 +165,36 @@ export const FeedPost = ({ post, className, style, onLikeToggle, onAddComment, o
                 )}
             </div>
 
-            <div className="px-4 relative">
+            <div className="px-4 relative min-h-[300px] flex items-center justify-center bg-black/40 rounded-lg border border-white/10 mx-4 overflow-hidden group">
+                {!imageLoaded && (
+                    <div className="absolute inset-0 flex items-center justify-center z-0">
+                         <Skeleton className="w-full h-full absolute inset-0 rounded-none" variant="card" />
+                    </div>
+                )}
                 <img
-                    src={images[currentImage]}
+                    src={currentImageUrl}
                     alt="post"
-                    className="w-full max-h-[520px] object-cover rounded-lg border border-white/10"
+                    onLoad={() => setImageLoaded(true)}
+                    className={cn(
+                        "w-full max-h-[520px] object-contain object-center z-10 transition-opacity duration-500",
+                        imageLoaded ? "opacity-100" : "opacity-0"
+                    )}
                     onError={(e) => {
+                        setImageLoaded(true);
                         e.currentTarget.src = '/vite.svg';
                     }}
                 />
+                
                 {images.length > 1 && (
                     <>
-                        <button className="absolute left-6 top-1/2 -translate-y-1/2 bg-black/50 p-2 rounded-full" onClick={() => setCurrentImage((i) => (i - 1 + images.length) % images.length)}>
-                            <ChevronLeft className="w-4 h-4" />
+                        <button className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/60 p-1.5 rounded-full z-20 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => { setImageLoaded(false); setCurrentImage((i) => (i - 1 + images.length) % images.length); }}>
+                            <ChevronLeft className="w-4 h-4 text-white" />
                         </button>
-                        <button className="absolute right-6 top-1/2 -translate-y-1/2 bg-black/50 p-2 rounded-full" onClick={() => setCurrentImage((i) => (i + 1) % images.length)}>
-                            <ChevronRight className="w-4 h-4" />
+                        <button className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/60 p-1.5 rounded-full z-20 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => { setImageLoaded(false); setCurrentImage((i) => (i + 1) % images.length); }}>
+                            <ChevronRight className="w-4 h-4 text-white" />
                         </button>
-                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                            {images.map((_, idx) => <span key={idx} className={cn('w-2 h-2 rounded-full', idx === currentImage ? 'bg-white' : 'bg-white/40')} />)}
+                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
+                            {images.map((_, idx) => <span key={idx} className={cn('w-1.5 h-1.5 rounded-full transition-all', idx === currentImage ? 'bg-white scale-125' : 'bg-white/40')} />)}
                         </div>
                     </>
                 )}
@@ -236,6 +250,6 @@ export const FeedPost = ({ post, className, style, onLikeToggle, onAddComment, o
             </div>
         </div>
     );
-};
+});
 
 

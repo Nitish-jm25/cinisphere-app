@@ -64,7 +64,7 @@ export const MovieDetailsModal = ({ movie, onClose }: MovieDetailsModalProps) =>
         .filter((member, index, arr) => arr.findIndex((entry) => entry.id === member.id && entry.job === member.job) === index)
         .slice(0, 8);
     const directors = notableCrew.filter(c => c.job === 'Director');
-    const showPeopleSection = creditsLoading || cast.length > 0 || notableCrew.length > 0 || creditsError;
+    const showPeopleSection = true;
 
     const bgImage = displayMovie.backdrop_path
         ? (displayMovie.backdrop_path.startsWith('http') ? displayMovie.backdrop_path : `https://image.tmdb.org/t/p/original${displayMovie.backdrop_path}`)

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     DATABASE_NAME: str
     TMDB_API_KEY: str | None = None
     TMDB_USE_MONGO_ONLY: bool = False
-    TMDB_TIMEOUT_SECONDS: int = 4
+    TMDB_TIMEOUT_SECONDS: int = 3
     TMDB_MAX_RETRIES: int = 1
     TMDB_RETRY_BASE_DELAY_SECONDS: float = 0.25
 

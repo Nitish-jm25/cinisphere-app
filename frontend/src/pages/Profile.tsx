@@ -150,14 +150,22 @@ export const Profile = () => {
 
     const handleFollowToggle = async () => {
         if (!profile || isOwnProfile) return;
+        
+        // Optimistic UI update
+        const isCurrentlyFollowing = profile.is_following;
+        setProfile((prev: any) => ({ 
+            ...prev, 
+            is_following: !isCurrentlyFollowing, 
+            followers_count: isCurrentlyFollowing ? Math.max(0, prev.followers_count - 1) : prev.followers_count + 1 
+        }));
+
         try {
-            if (profile.is_following) {
+            if (isCurrentlyFollowing) {
                 await socialApi.unfollowUser(profile.user.id);
-                setProfile((prev: any) => ({ ...prev, is_following: false, followers_count: Math.max(0, prev.followers_count - 1) }));
             } else {
                 await socialApi.followUser(profile.user.id);
-                setProfile((prev: any) => ({ ...prev, is_following: true, followers_count: prev.followers_count + 1 }));
             }
+            // Background sync
             const [refreshed, followersData, followingData] = await Promise.all([
                 socialApi.getUserProfile(usernameToLoad),
                 socialApi.getUserFollowers(usernameToLoad),
@@ -167,6 +175,12 @@ export const Profile = () => {
             setFollowersList(followersData.users.map(mapToFollowRow));
             setFollowingList(followingData.users.map(mapToFollowRow));
         } catch (error) {
+            // Revert on failure
+            setProfile((prev: any) => ({ 
+                ...prev, 
+                is_following: isCurrentlyFollowing, 
+                followers_count: isCurrentlyFollowing ? prev.followers_count + 1 : Math.max(0, prev.followers_count - 1) 
+            }));
             alert((error as Error).message || 'Follow action failed');
         }
     };

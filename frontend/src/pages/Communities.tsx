@@ -83,6 +83,11 @@ export const Communities = () => {
   const [movieResults, setMovieResults] = useState<any[]>([]);
   const [selectedMovie, setSelectedMovie] = useState<any | null>(null);
 
+  const [isCreatingCommunity, setIsCreatingCommunity] = useState(false);
+  const [newCommunityName, setNewCommunityName] = useState('');
+  const [newCommunityDesc, setNewCommunityDesc] = useState('');
+  const [createCommunityLoading, setCreateCommunityLoading] = useState(false);
+
   const selectedCommunity = useMemo(
     () => communities.find((c) => c.id === selectedCommunityId) || null,
     [communities, selectedCommunityId]
@@ -252,6 +257,24 @@ export const Communities = () => {
     }
   };
 
+  const handleCreateCommunity = async () => {
+    if (!newCommunityName.trim()) return;
+    setCreateCommunityLoading(true);
+    try {
+      const created = await socialApi.createCommunity({ name: newCommunityName, description: newCommunityDesc });
+      setCommunities((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedCommunityId(created.id);
+      setIsCreatingCommunity(false);
+      setNewCommunityName('');
+      setNewCommunityDesc('');
+      navigate(`/community/${created.id}`);
+    } catch (e: any) {
+      alert(e.message || 'Failed to create community');
+    } finally {
+      setCreateCommunityLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background pb-24 pt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
@@ -263,14 +286,19 @@ export const Communities = () => {
                 <RefreshCcw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               </Button>
             </div>
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                className="w-full bg-black/30 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm"
-                placeholder="Search communities"
-                value={communitySearch}
-                onChange={(e) => setCommunitySearch(e.target.value)}
-              />
+            <div className="flex items-center justify-between mb-4">
+              <div className="relative flex-1 mr-2">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  className="w-full bg-black/30 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm"
+                  placeholder="Search communities"
+                  value={communitySearch}
+                  onChange={(e) => setCommunitySearch(e.target.value)}
+                />
+              </div>
+              <Button size="sm" onClick={() => setIsCreatingCommunity(true)}>
+                <UserPlus className="w-4 h-4 mr-1" /> Create
+              </Button>
             </div>
             {loading && <p className="text-sm text-gray-400">Loading communities...</p>}
             {error && <p className="text-sm text-red-400">{error}</p>}
@@ -391,6 +419,45 @@ export const Communities = () => {
           </aside>
         </div>
       </div>
+
+      {isCreatingCommunity && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsCreatingCommunity(false)} />
+          <div className="relative w-full max-w-md bg-secondary/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 fade-in duration-300">
+            <h3 className="text-xl font-bold mb-4">Create a Community</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-semibold text-gray-300 block mb-1">Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Scifi Lovers"
+                  className="w-full bg-background/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  value={newCommunityName}
+                  onChange={(e) => setNewCommunityName(e.target.value)}
+                  maxLength={50}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-gray-300 block mb-1">Description</label>
+                <textarea
+                  placeholder="What is this community about?"
+                  className="w-full bg-background/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  rows={3}
+                  value={newCommunityDesc}
+                  onChange={(e) => setNewCommunityDesc(e.target.value)}
+                  maxLength={300}
+                />
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <Button variant="outline" onClick={() => setIsCreatingCommunity(false)}>Cancel</Button>
+                <Button onClick={handleCreateCommunity} disabled={!newCommunityName.trim() || createCommunityLoading}>
+                  {createCommunityLoading ? 'Creating...' : 'Create Community'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

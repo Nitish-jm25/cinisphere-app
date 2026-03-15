@@ -61,7 +61,7 @@ export const MOCK_GENRES: Record<number, string> = {
     37: 'Western'
 };
 
-const fetchWithTimeout = async (url: string, timeoutMs = 12000): Promise<Response> => {
+const fetchWithTimeout = async (url: string, timeoutMs = 15000): Promise<Response> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -118,10 +118,11 @@ export const tmdbService = {
         }
     },
 
-    getMoodPicks: async (params?: { mood?: string | null; language?: string | null; genres?: string[] }): Promise<{ results: Movie[] }> => {
+    getMoodPicks: async (params?: { mood?: string | null; language?: string | null; genres?: string[]; mindset?: string | null }): Promise<{ results: Movie[] }> => {
         try {
             const q = new URLSearchParams();
             if (params?.mood) q.set('mood', params.mood);
+            if (params?.mindset) q.set('mindset', params.mindset);
             if (params?.language) q.set('language', params.language);
             if (params?.genres?.length) q.set('genres', params.genres.join(','));
             const suffix = q.toString() ? `?${q.toString()}` : '';

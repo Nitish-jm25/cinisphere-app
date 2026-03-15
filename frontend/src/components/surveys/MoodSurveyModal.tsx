@@ -30,13 +30,12 @@ export const MoodSurveyModal: React.FC<MoodSurveyModalProps> = ({ isOpen, onClos
     const [selectedMindset, setSelectedMindset] = useState<string | null>(null);
 
     const handleSubmit = () => {
-        if (selectedMood) {
-            // Update app context so the "Mood-based Picks" row updates
-            setOnboardingData({
-                ...onboardingData,
-                mood: MOODS.find(m => m.id === selectedMood)?.label || 'Good'
-            });
-        }
+        // Update app context so the "Mood-based Picks" row updates
+        setOnboardingData({
+            ...onboardingData,
+            mood: selectedMood ? (MOODS.find(m => m.id === selectedMood)?.label || 'Good') : onboardingData.mood,
+            mindset: selectedMindset || onboardingData.mindset,
+        });
 
         // Save to session storage so we don't ask again this session
         sessionStorage.setItem('hasCompletedMoodSurvey', 'true');

@@ -1,4 +1,4 @@
-import { Film, User, Compass, Users, Sparkles, LogOut, Bell } from 'lucide-react';
+import { Film, User, Compass, Users, Sparkles, LogOut, Bell, Heart, MessageSquare, UserPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -6,6 +6,24 @@ import { cn } from '../../utils/cn';
 import { SearchBar } from './SearchBar';
 import { useAuth } from '../../context/AuthContext';
 import { socialApi, type NotificationItem } from '../../services/socialApi';
+
+const timeAgo = (createdAt: string): string => {
+  const date = new Date(createdAt).getTime();
+  const now = Date.now();
+  const diff = Math.floor((now - date) / 1000);
+  if (diff < 60) return 'now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
+};
+
+const getNotificationIcon = (message: string) => {
+    const msg = message.toLowerCase();
+    if (msg.includes('like')) return <Heart className="w-4 h-4 text-red-500 fill-current" />;
+    if (msg.includes('comment')) return <MessageSquare className="w-4 h-4 text-blue-400" />;
+    if (msg.includes('follow')) return <UserPlus className="w-4 h-4 text-green-400" />;
+    return <Bell className="w-4 h-4 text-primary" />;
+};
 
 export const Navbar = () => {
     const { user, logout } = useAuth();
@@ -94,14 +112,39 @@ export const Navbar = () => {
                                         )}
                                     </button>
                                     {notifOpen && (
-                                        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-auto rounded-xl border border-white/10 bg-black/95 p-2 shadow-xl">
-                                            <p className="text-xs text-gray-400 px-2 py-1">Notifications</p>
-                                            {notifications.length === 0 && <p className="text-sm text-gray-400 px-2 py-3">No notifications yet.</p>}
-                                            {notifications.map((n) => (
-                                                <div key={n.id} className="px-2 py-2 border-b border-white/10 last:border-b-0">
-                                                    <p className="text-sm text-white">{n.message}</p>
-                                                </div>
-                                            ))}
+                                        <div className="absolute right-0 mt-2 w-80 max-h-[400px] overflow-auto rounded-xl border border-white/10 bg-black/95 p-2 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-2">
+                                            <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 mb-2">
+                                                <p className="text-sm font-bold text-white">Notifications</p>
+                                                {unreadCount > 0 && <span className="text-xs text-primary">{unreadCount} new</span>}
+                                            </div>
+                                            {notifications.length === 0 && <p className="text-sm text-gray-500 px-3 py-4 text-center">No notifications yet.</p>}
+                                            <div className="space-y-1">
+                                                {notifications.map((n) => (
+                                                    <div key={n.id} className="group relative flex gap-3 px-3 py-3 rounded-lg hover:bg-white/5 transition-colors cursor-pointer">
+                                                        <div className="flex-shrink-0 mt-0.5">
+                                                            {n.actor_avatar_url ? (
+                                                                <div className="relative">
+                                                                    <img src={n.actor_avatar_url} alt="" className="w-8 h-8 rounded-full object-cover border border-white/10" />
+                                                                    <div className="absolute -bottom-1 -right-1 bg-black p-0.5 rounded-full">
+                                                                        {getNotificationIcon(n.message)}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
+                                                                    {getNotificationIcon(n.message)}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm text-gray-300 leading-tight">
+                                                                {n.actor_username && <span className="font-bold text-white mr-1">{n.actor_username}</span>}
+                                                                {n.message.replace(new RegExp(`^${n.actor_username}\\s`, 'i'), '')}
+                                                            </p>
+                                                            <p className="text-xs text-secondary-foreground mt-1 font-medium">{timeAgo(n.created_at)}</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
                                 </div>

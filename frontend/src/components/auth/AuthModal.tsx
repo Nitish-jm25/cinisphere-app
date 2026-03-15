@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/Button';
 import { X, Mail, Lock, User, ArrowRight } from 'lucide-react';
 
@@ -78,7 +78,9 @@ export const AuthModal = ({ isOpen, onClose, initialMode = 'signin', onSuccess }
 
             setIsLoading(false);
             setSuccessMsg(mode === 'signin' ? 'Login successful!' : 'Account created successfully!');
-            setTimeout(() => onSuccess(mode === 'forgot' ? 'signin' : mode), 500);
+            setTimeout(() => {
+                onSuccess(mode === 'signup' ? 'signup' : 'signin');
+            }, 500);
         } catch (err: any) {
             setIsLoading(false);
             setError(err?.message || 'Something went wrong. Please try again.');
