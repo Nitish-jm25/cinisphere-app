@@ -13,11 +13,15 @@ it detects an empty/undersized dataset.
 
 import sys
 import os
+from pathlib import Path
 import pandas as pd
 from pymongo import MongoClient
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[2] / "backend" / ".env")
 
 # ─── Configuration ────────────────────────────────────────────
-MONGO_URI = "mongodb://localhost:27017/"
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = os.getenv("DATABASE_NAME", "cinisphere")
 COLLECTION_NAME = "movies"
 
