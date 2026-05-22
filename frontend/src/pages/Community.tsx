@@ -1,7 +1,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { MessageSquare, Users, Send, Search, ArrowLeft, Heart, MessageCircle, Share2 } from 'lucide-react';
+import { MessageSquare, Users, Send, Search, ArrowLeft } from 'lucide-react';
 
 import { Button } from '../components/ui/Button';
 import { Avatar } from '../components/ui/Avatar';
@@ -254,6 +254,11 @@ const Communities = ({ communityId: initialCommunityId }: CommunitiesProps) => {
           </Button>
           <h1 className="text-3xl font-bold text-glow">{selectedCommunity?.name || 'Community'}</h1>
         </div>
+        {error && (
+          <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {error}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <main className="lg:col-span-2 space-y-6">

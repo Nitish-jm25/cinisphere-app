@@ -25,12 +25,20 @@ from app.services.seed_service import seed_social_data
 
 app = FastAPI(title="CINESPHERE API")
 
+cors_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    settings.FRONTEND_BASE_URL,
+]
+cors_origins.extend(
+    origin.strip()
+    for origin in settings.BACKEND_CORS_ORIGINS.split(",")
+    if origin.strip()
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=list(dict.fromkeys(cors_origins)),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

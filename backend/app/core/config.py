@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     SOCIAL_SEED_ENABLED: bool = False
     SOCIAL_HIDE_SEED_USERS: bool = True
     FRONTEND_BASE_URL: str = "http://localhost:5173"
+    BACKEND_CORS_ORIGINS: str = ""
     EMAIL_VERIFICATION_EXPIRE_MINUTES: int = 60 * 24
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
 
