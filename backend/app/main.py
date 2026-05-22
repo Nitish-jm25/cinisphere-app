@@ -20,7 +20,6 @@ from app.api.routes.users import router as users_router
 from app.core import dependencies
 from app.core.config import settings
 from app.db.sql import SessionLocal, init_db
-from app.services.ml_service import MLService
 from app.services.seed_service import seed_social_data
 
 app = FastAPI(title="CINESPHERE API")
@@ -79,7 +78,6 @@ def health_check():
 
 @app.on_event("startup")
 def startup_event():
-    dependencies.ml_service = MLService()
     init_db()
     db = SessionLocal()
     try:
@@ -87,5 +85,4 @@ def startup_event():
             seed_social_data(db)
     finally:
         db.close()
-    print("ML Service initialized")
     print("Social SQL tables initialized")
