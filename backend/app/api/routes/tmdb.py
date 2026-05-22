@@ -4,10 +4,8 @@ import re
 import socket
 import time
 from datetime import date
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import ProxyHandler, build_opener
 
+import requests
 from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import settings
@@ -18,7 +16,7 @@ TMDB_BASE_URL = "https://api.themoviedb.org/3"
 RETRYABLE_HTTP_STATUS_CODES = {429, 500, 502, 503, 504}
 TMDB_CACHE_TTL_SECONDS = 300
 _tmdb_response_cache: dict[str, tuple[float, dict]] = {}
-_tmdb_opener = build_opener(ProxyHandler({}))
+_tmdb_session = requests.Session()
 _movies_collection = get_movies_collection()
 _GENRE_NAME_TO_ID = {
     "action": 28,
@@ -418,30 +416,39 @@ def _tmdb_get(path: str, params: dict | None = None):
     if params:
         query.update(params)
 
-    url = f"{TMDB_BASE_URL}{path}?{urlencode(query)}"
+    url = f"{TMDB_BASE_URL}{path}"
     cache_key = _cache_key(path, params)
     max_retries = max(settings.TMDB_MAX_RETRIES, 1)
     timeout_sec = max(settings.TMDB_TIMEOUT_SECONDS, 1)
-    base_delay = max(settings.TMDB_RETRY_BASE_DELAY_SECONDS, 0.1)
+    base_delay = max(settings.TMDB_RETRY_BASE_DELAY_SECONDS, 0.25)
     last_error: Exception | None = None
 
     for attempt in range(1, max_retries + 1):
         try:
-            with _tmdb_opener.open(url, timeout=timeout_sec) as response:
-                payload = response.read().decode("utf-8")
-                parsed = json.loads(payload)
+            response = _tmdb_session.get(url, params=query, timeout=timeout_sec)
+            if response.status_code == 200:
+                parsed = response.json()
                 _set_cached_response(cache_key, parsed)
                 return parsed
-        except HTTPError as exc:
-            detail = exc.read().decode("utf-8") if exc.fp else str(exc)
-            if exc.code in RETRYABLE_HTTP_STATUS_CODES and attempt < max_retries:
+            
+            if response.status_code in RETRYABLE_HTTP_STATUS_CODES and attempt < max_retries:
                 time.sleep(base_delay * (2 ** (attempt - 1)))
                 continue
+            
+            # Non-retryable error or last attempt
             cached_payload = _get_cached_response(cache_key)
             if cached_payload is not None:
                 return cached_payload
-            raise HTTPException(status_code=exc.code, detail=detail)
-        except (URLError, TimeoutError, socket.timeout) as exc:
+            
+            detail = "Request failed"
+            try:
+                detail = response.json().get("status_message", detail)
+            except:
+                detail = response.text or detail
+            
+            raise HTTPException(status_code=response.status_code, detail=detail)
+
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
             last_error = exc
             if attempt < max_retries:
                 time.sleep(base_delay * (2 ** (attempt - 1)))
@@ -453,11 +460,6 @@ def _tmdb_get(path: str, params: dict | None = None):
                 status_code=504,
                 detail="TMDB request timed out or network is unreachable",
             )
-        except json.JSONDecodeError as exc:
-            cached_payload = _get_cached_response(cache_key)
-            if cached_payload is not None:
-                return cached_payload
-            raise HTTPException(status_code=502, detail=f"Invalid TMDB response format: {exc}")
         except Exception as exc:
             last_error = exc
             if attempt < max_retries:
@@ -467,10 +469,6 @@ def _tmdb_get(path: str, params: dict | None = None):
             if cached_payload is not None:
                 return cached_payload
             raise HTTPException(status_code=502, detail=f"TMDB request failed: {exc}")
-
-    cached_payload = _get_cached_response(cache_key)
-    if cached_payload is not None:
-        return cached_payload
 
     raise HTTPException(
         status_code=502,
