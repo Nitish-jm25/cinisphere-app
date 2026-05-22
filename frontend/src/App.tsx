@@ -23,6 +23,7 @@ const PageLoader = () => (
     <Loader2 className="w-8 h-8 md:w-12 md:h-12 text-primary animate-spin" />
   </div>
 );
+// trigger deployment
 
 function App() {
   return (
