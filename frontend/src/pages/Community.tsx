@@ -9,6 +9,7 @@ import { FeedPost, type Post } from '../components/community/FeedPost';
 import { socialApi, type CommunityMember, type CommunityMessage, type CommunitySummary } from '../services/socialApi';
 import { tmdbService } from '../services/tmdb';
 import { resolvePostImages } from '../utils/postImages';
+import { timeAgo } from '../utils/time';
 
 const displayName = (username: string) =>
   username
@@ -17,16 +18,6 @@ const displayName = (username: string) =>
     .filter(Boolean)
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
     .join(' ');
-
-const timeAgo = (createdAt: string): string => {
-  const date = new Date(createdAt).getTime();
-  const now = Date.now();
-  const diff = Math.floor((now - date) / 1000);
-  if (diff < 60) return 'now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return `${Math.floor(diff / 86400)}d`;
-};
 
 export const Community = () => {
     const { communityId } = useParams();
@@ -65,6 +56,7 @@ const Communities = ({ communityId: initialCommunityId }: CommunitiesProps) => {
   const [movieQuery, setMovieQuery] = useState('');
   const [movieResults, setMovieResults] = useState<any[]>([]);
   const [selectedMovie, setSelectedMovie] = useState<any | null>(null);
+  const currentUserId = localStorage.getItem('current_user_id');
 
   const chatSocketRef = useRef<WebSocket | null>(null);
   const [chatLiveAvailable, setChatLiveAvailable] = useState(true);
@@ -91,6 +83,7 @@ const Communities = ({ communityId: initialCommunityId }: CommunitiesProps) => {
       comments: p.comments_count,
       timeAgo: timeAgo(p.created_at),
       isLikedByMe: p.is_liked,
+      isSavedByMe: p.is_saved,
     };
   };
 
@@ -226,6 +219,22 @@ const Communities = ({ communityId: initialCommunityId }: CommunitiesProps) => {
     return rows.map((c) => ({ id: String(c.id), username: c.author.username, text: c.content }));
   };
 
+  const handleDeletePost = async (postId: string) => {
+    await socialApi.deletePost(Number(postId));
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  };
+
+  const handleEditPost = async (postId: string, caption: string) => {
+    const updated = await socialApi.updatePost(Number(postId), caption);
+    setPosts((prev) => prev.map((p) => (p.id === postId ? mapPost(updated) : p)));
+  };
+
+  const handleSaveToggle = async (postId: string, currentlySaved: boolean) => {
+    if (currentlySaved) await socialApi.unsavePost(Number(postId));
+    else await socialApi.savePost(Number(postId));
+    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, isSavedByMe: !currentlySaved } : p)));
+  };
+
   const handleJoinToggle = async (community: CommunitySummary) => {
     if (community.joined) {
       await socialApi.leaveCommunity(community.id);
@@ -339,6 +348,11 @@ const Communities = ({ communityId: initialCommunityId }: CommunitiesProps) => {
                     onLikeToggle={handleLikeToggle} 
                     onAddComment={handleAddComment} 
                     onLoadComments={handleLoadComments} 
+                    canDelete={currentUserId === p.user.id}
+                    canEdit={currentUserId === p.user.id}
+                    onDeletePost={handleDeletePost}
+                    onEditPost={handleEditPost}
+                    onSaveToggle={handleSaveToggle}
                   />
                 ))
               )}

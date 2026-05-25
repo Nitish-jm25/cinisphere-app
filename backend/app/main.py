@@ -12,6 +12,7 @@ from app.api.routes import auth, recommendation, tailor_fit, tmdb
 from app.api.routes.chat import router as chat_router
 from app.api.routes.communities import router as communities_router
 from app.api.routes.comments import router as comments_router
+from app.api.routes.movie_list import router as movie_list_router
 from app.api.routes.moderation import router as moderation_router
 from app.api.routes.notifications import router as notifications_router
 from app.api.routes.posts import router as posts_router
@@ -56,6 +57,7 @@ app.include_router(posts_router)
 app.include_router(comments_router)
 app.include_router(communities_router)
 app.include_router(chat_router)
+app.include_router(movie_list_router)
 app.include_router(notifications_router)
 app.include_router(moderation_router)
 
@@ -64,6 +66,7 @@ app.include_router(users_router, prefix="/api")
 app.include_router(posts_router, prefix="/api")
 app.include_router(communities_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
+app.include_router(movie_list_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(moderation_router, prefix="/api")
 uploads_dir = Path(__file__).resolve().parents[1] / "uploads"

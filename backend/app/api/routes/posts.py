@@ -1,3 +1,4 @@
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.db.sql import get_db_session
-from app.models.social_models import Comment, Follow, Like, Post, PostMedia, User, UserBlock
+from app.models.social_models import Comment, CommunityPost, Follow, Like, Post, PostMedia, SavedPost, User, UserBlock
 from app.schemas.social_schema import (
     CommentCreateRequest,
     CommentResponse,
@@ -16,6 +17,7 @@ from app.schemas.social_schema import (
     PostCommentItem,
     PostCreateRequest,
     PostResponse,
+    PostUpdateRequest,
 )
 from app.services.notification_service import create_notification
 from app.services.social_guard import is_blocked_either_direction
@@ -24,6 +26,7 @@ from app.services.social_guard import is_blocked_either_direction
 router = APIRouter(prefix="/posts", tags=["Posts"])
 UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads" / "posts"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+MENTION_RE = re.compile(r"@([A-Za-z0-9_.]{3,50})")
 
 
 def _build_post_response(db: Session, post: Post, current_user_id: int) -> PostResponse:
@@ -32,6 +35,12 @@ def _build_post_response(db: Session, post: Post, current_user_id: int) -> PostR
     is_liked = (
         db.query(Like)
         .filter(and_(Like.post_id == post.id, Like.user_id == current_user_id))
+        .first()
+        is not None
+    )
+    is_saved = (
+        db.query(SavedPost)
+        .filter(and_(SavedPost.post_id == post.id, SavedPost.user_id == current_user_id))
         .first()
         is not None
     )
@@ -56,6 +65,7 @@ def _build_post_response(db: Session, post: Post, current_user_id: int) -> PostR
         likes_count=likes_count,
         comments_count=comments_count,
         is_liked=is_liked,
+        is_saved=is_saved,
         author=PostAuthor(id=author.id, username=author.username, avatar_url=author.avatar_url),
         image_urls=image_urls,
     )
@@ -74,6 +84,24 @@ def _blocked_user_ids(db: Session, user_id: int) -> set[int]:
         if row.blocked_id == user_id:
             blocked.add(row.blocker_id)
     return blocked
+
+
+def _notify_mentions(db: Session, content: str, actor: User, post: Post) -> None:
+    usernames = {match.group(1).lower() for match in MENTION_RE.finditer(content)}
+    if not usernames:
+        return
+    users = db.query(User).filter(func.lower(User.username).in_(usernames)).all()
+    for user in users:
+        if user.id == actor.id or is_blocked_either_direction(db, actor.id, user.id):
+            continue
+        create_notification(
+            db,
+            user_id=user.id,
+            actor_id=actor.id,
+            notif_type="mention",
+            message=f"{actor.username} mentioned you in a comment",
+            resource_id=post.id,
+        )
 
 
 @router.post("", response_model=PostResponse)
@@ -147,6 +175,29 @@ def create_post_with_upload(
     return _build_post_response(db, post, current_user.id)
 
 
+@router.get("/saved", response_model=list[PostResponse])
+def get_saved_posts(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    rows = (
+        db.query(SavedPost)
+        .filter(SavedPost.user_id == current_user.id)
+        .order_by(desc(SavedPost.created_at))
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    post_ids = [row.post_id for row in rows]
+    if not post_ids:
+        return []
+    posts = db.query(Post).filter(Post.id.in_(post_ids)).all()
+    post_map = {post.id: post for post in posts}
+    return [_build_post_response(db, post_map[post_id], current_user.id) for post_id in post_ids if post_id in post_map]
+
+
 @router.delete("/{post_id}")
 def delete_post(
     post_id: int,
@@ -159,9 +210,32 @@ def delete_post(
     if post.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only delete your own posts")
 
+    db.query(SavedPost).filter(SavedPost.post_id == post_id).delete(synchronize_session=False)
+    db.query(Like).filter(Like.post_id == post_id).delete(synchronize_session=False)
+    db.query(Comment).filter(Comment.post_id == post_id).delete(synchronize_session=False)
+    db.query(CommunityPost).filter(CommunityPost.post_id == post_id).delete(synchronize_session=False)
     db.delete(post)
     db.commit()
     return {"success": True}
+
+
+@router.patch("/{post_id}", response_model=PostResponse)
+def update_post(
+    post_id: int,
+    payload: PostUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only edit your own posts")
+    post.caption = payload.caption.strip()
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    return _build_post_response(db, post, current_user.id)
 
 
 @router.get("/feed", response_model=list[PostResponse])
@@ -249,6 +323,42 @@ def unlike_post(
     return {"success": True, "message": "Unliked"}
 
 
+@router.post("/{post_id}/save")
+def save_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if is_blocked_either_direction(db, current_user.id, post.user_id):
+        raise HTTPException(status_code=403, detail="Action not allowed")
+
+    existing = db.query(SavedPost).filter(and_(SavedPost.post_id == post_id, SavedPost.user_id == current_user.id)).first()
+    if existing:
+        return {"success": True, "message": "Already saved"}
+
+    db.add(SavedPost(post_id=post_id, user_id=current_user.id))
+    db.commit()
+    return {"success": True, "message": "Saved"}
+
+
+@router.delete("/{post_id}/save")
+def unsave_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    existing = db.query(SavedPost).filter(and_(SavedPost.post_id == post_id, SavedPost.user_id == current_user.id)).first()
+    if not existing:
+        return {"success": True, "message": "Not saved"}
+
+    db.delete(existing)
+    db.commit()
+    return {"success": True, "message": "Unsaved"}
+
+
 @router.post("/{post_id}/comment", response_model=CommentResponse)
 def add_comment(
     post_id: int,
@@ -272,6 +382,7 @@ def add_comment(
         message=f"{current_user.username} commented on your post",
         resource_id=post.id,
     )
+    _notify_mentions(db, comment.content, current_user, post)
     db.commit()
     db.refresh(comment)
 

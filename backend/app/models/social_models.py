@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.db.sql import Base
@@ -56,6 +56,16 @@ class Like(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class SavedPost(Base):
+    __tablename__ = "saved_posts"
+    __table_args__ = (UniqueConstraint("user_id", "post_id", name="uq_saved_user_post"),)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
 class Comment(Base):
     __tablename__ = "comments"
 
@@ -98,6 +108,16 @@ class CommunityMembership(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class CommunityOwner(Base):
+    __tablename__ = "community_owners"
+    __table_args__ = (UniqueConstraint("community_id", name="uq_community_owner"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    community_id = Column(Integer, ForeignKey("communities.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class CommunityMessage(Base):
     __tablename__ = "community_messages"
 
@@ -108,6 +128,17 @@ class CommunityMessage(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
 
 
+class DirectMessage(Base):
+    __tablename__ = "direct_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipient_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    read_at = Column(DateTime, nullable=True)
+
+
 class CommunityPost(Base):
     __tablename__ = "community_posts"
     __table_args__ = (UniqueConstraint("community_id", "post_id", name="uq_community_post"),)
@@ -116,6 +147,23 @@ class CommunityPost(Base):
     community_id = Column(Integer, ForeignKey("communities.id", ondelete="CASCADE"), nullable=False, index=True)
     post_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class MovieListItem(Base):
+    __tablename__ = "movie_list_items"
+    __table_args__ = (UniqueConstraint("user_id", "movie_id", name="uq_movie_list_user_movie"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    movie_id = Column(Integer, nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    poster_path = Column(String(1024), nullable=True)
+    release_date = Column(String(32), nullable=True)
+    status = Column(String(24), nullable=False, default="watchlist", index=True)
+    rating = Column(Float, nullable=True)
+    notes = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Notification(Base):

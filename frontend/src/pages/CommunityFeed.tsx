@@ -11,6 +11,7 @@ import { dataService, type User } from '../services/mockData';
 import { socialApi, type CommunitySummary, type SocialPost } from '../services/socialApi';
 import { tmdbService, type Movie } from '../services/tmdb';
 import { resolvePostImages } from '../utils/postImages';
+import { timeAgo } from '../utils/time';
 import { useAuth } from '../context/AuthContext';
 
 const DEFAULT_COMMUNITY_IMAGE = 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=500&auto=format&fit=crop';
@@ -31,16 +32,6 @@ const displayName = (username: string) =>
         .filter(Boolean)
         .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
         .join(' ');
-
-const timeAgo = (createdAt: string): string => {
-    const date = new Date(createdAt).getTime();
-    const now = Date.now();
-    const diff = Math.floor((now - date) / 1000);
-    if (diff < 60) return 'now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
-};
 
 const toPosterUrl = (posterPath?: string | null) => {
     if (!posterPath) return '';
@@ -64,6 +55,7 @@ const mapPost = (p: SocialPost): Post => {
         comments: p.comments_count,
         timeAgo: timeAgo(p.created_at),
         isLikedByMe: p.is_liked,
+        isSavedByMe: p.is_saved,
     };
 };
 
@@ -213,6 +205,17 @@ export const CommunityFeed = () => {
     const handleDeletePost = async (postId: string) => {
         await socialApi.deletePost(Number(postId));
         setPosts((prev) => prev.filter((p) => p.id !== postId));
+    };
+
+    const handleEditPost = async (postId: string, caption: string) => {
+        const updated = await socialApi.updatePost(Number(postId), caption);
+        setPosts((prev) => prev.map((p) => (p.id === postId ? mapPost(updated) : p)));
+    };
+
+    const handleSaveToggle = async (postId: string, currentlySaved: boolean) => {
+        if (currentlySaved) await socialApi.unsavePost(Number(postId));
+        else await socialApi.savePost(Number(postId));
+        setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, isSavedByMe: !currentlySaved } : p)));
     };
 
     const handleFollow = async (userId: string) => {
@@ -392,7 +395,10 @@ export const CommunityFeed = () => {
                                         onAddComment={handleAddComment}
                                         onLoadComments={handleLoadComments}
                                         canDelete={authUser?.username === post.user.handle}
+                                        canEdit={authUser?.username === post.user.handle}
                                         onDeletePost={handleDeletePost}
+                                        onEditPost={handleEditPost}
+                                        onSaveToggle={handleSaveToggle}
                                         className="animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-both"
                                         style={{ animationDelay: `${idx * 100}ms` }}
                                     />

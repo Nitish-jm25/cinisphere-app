@@ -69,6 +69,10 @@ class PostCreateRequest(BaseModel):
     movie_title: str | None = Field(default=None, max_length=255)
 
 
+class PostUpdateRequest(BaseModel):
+    caption: str = Field(min_length=1, max_length=2200)
+
+
 class PostAuthor(BaseModel):
     id: int
     username: str
@@ -84,6 +88,7 @@ class PostResponse(BaseModel):
     likes_count: int
     comments_count: int
     is_liked: bool
+    is_saved: bool = False
     author: PostAuthor
     image_urls: list[str] = []
 
@@ -124,11 +129,18 @@ class CommunitySummary(BaseModel):
     image_url: str | None = None
     member_count: int
     joined: bool
+    can_manage: bool = False
 
 
 class CommunityCreateRequest(BaseModel):
     name: str = Field(min_length=2, max_length=80)
     description: str = Field(default="", max_length=1000)
+    image_url: str | None = Field(default=None, max_length=1024)
+
+
+class CommunityUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=80)
+    description: str | None = Field(default=None, max_length=1000)
     image_url: str | None = Field(default=None, max_length=1024)
 
 
@@ -160,10 +172,58 @@ class CommunityMessageItem(BaseModel):
     message: str
 
 
+class DirectMessageCreate(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class DirectMessageItem(BaseModel):
+    id: int
+    sender_id: int
+    recipient_id: int
+    created_at: datetime
+    read_at: datetime | None = None
+    message: str
+
+
+class DirectConversationItem(BaseModel):
+    user: PostAuthor
+    last_message: DirectMessageItem
+    unread_count: int = 0
+
+
 class CommunityPostCreate(BaseModel):
     caption: str = Field(default="", max_length=2200)
     image_url: str = Field(min_length=1, max_length=1024)
     movie_title: str | None = Field(default=None, max_length=255)
+
+
+class MovieListItemCreate(BaseModel):
+    movie_id: int
+    title: str = Field(min_length=1, max_length=255)
+    poster_path: str | None = Field(default=None, max_length=1024)
+    release_date: str | None = Field(default=None, max_length=32)
+    status: str = Field(default="watchlist", pattern="^(watchlist|watched)$")
+    rating: float | None = Field(default=None, ge=0, le=5)
+    notes: str = Field(default="", max_length=2000)
+
+
+class MovieListItemUpdate(BaseModel):
+    status: str | None = Field(default=None, pattern="^(watchlist|watched)$")
+    rating: float | None = Field(default=None, ge=0, le=5)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class MovieListItemResponse(BaseModel):
+    id: int
+    movie_id: int
+    title: str
+    poster_path: str | None = None
+    release_date: str | None = None
+    status: str
+    rating: float | None = None
+    notes: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class NotificationItem(BaseModel):

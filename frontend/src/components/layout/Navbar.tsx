@@ -1,4 +1,4 @@
-import { Film, User, Compass, Users, Sparkles, LogOut, Bell, Heart, MessageSquare, UserPlus } from 'lucide-react';
+import { Film, User, Compass, Users, Sparkles, LogOut, Bell, Heart, MessageSquare, UserPlus, Bookmark } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -6,16 +6,7 @@ import { cn } from '../../utils/cn';
 import { SearchBar } from './SearchBar';
 import { useAuth } from '../../context/AuthContext';
 import { socialApi, type NotificationItem } from '../../services/socialApi';
-
-const timeAgo = (createdAt: string): string => {
-  const date = new Date(createdAt).getTime();
-  const now = Date.now();
-  const diff = Math.floor((now - date) / 1000);
-  if (diff < 60) return 'now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return `${Math.floor(diff / 86400)}d`;
-};
+import { timeAgo } from '../../utils/time';
 
 const getNotificationIcon = (message: string) => {
     const msg = message.toLowerCase();
@@ -64,6 +55,8 @@ export const Navbar = () => {
         { label: 'Tailor Fit', path: '/tailor-fit', icon: <Sparkles className="w-5 h-5" /> },
         { label: 'Feed', path: '/feed', icon: <Film className="w-5 h-5" /> },
         { label: 'Community', path: '/community', icon: <Users className="w-5 h-5" /> },
+        { label: 'Watchlist', path: '/watchlist', icon: <Bookmark className="w-5 h-5" /> },
+        { label: 'Messages', path: '/messages', icon: <MessageSquare className="w-5 h-5" /> },
         { label: 'Profile', path: user?.username ? `/profile/${user.username}` : '/profile', icon: <User className="w-5 h-5" /> },
     ];
 
@@ -80,7 +73,7 @@ export const Navbar = () => {
                         <SearchBar />
                     </div>
 
-                    <div className="hidden md:flex items-center gap-6">
+                    <div className="hidden md:flex items-center gap-3 lg:gap-4">
                         {navItems.map((item) => {
                             const isActive = item.label === 'Profile'
                                 ? location.pathname === '/profile' || location.pathname.startsWith('/profile/')
@@ -94,7 +87,7 @@ export const Navbar = () => {
                                     className={cn('group relative flex items-center gap-2 text-sm font-medium transition-colors hover:text-white py-2', isActive ? 'text-white' : 'text-gray-400')}
                                 >
                                     {item.icon}
-                                    {item.label}
+                                    <span className="hidden xl:inline">{item.label}</span>
                                     <span className={cn('absolute bottom-0 left-0 w-full h-[2px] bg-primary rounded-t-full transition-transform duration-300 ease-out origin-left', isActive ? 'scale-x-100' : 'scale-x-0 group-hover:scale-x-100')} />
                                 </Link>
                             )
