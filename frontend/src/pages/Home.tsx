@@ -191,7 +191,7 @@ export const Home = () => {
                 />
 
                 <MovieRow
-                    title="Kollywood Masterpieces (Tamil)"
+                    title="Kollywood (Tamil)"
                     movies={tamilMovies}
                     loading={loadingTamil}
                 />
