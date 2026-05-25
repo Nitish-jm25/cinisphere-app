@@ -126,6 +126,12 @@ class CommunitySummary(BaseModel):
     joined: bool
 
 
+class CommunityCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    description: str = Field(default="", max_length=1000)
+    image_url: str | None = Field(default=None, max_length=1024)
+
+
 class CommunityListResponse(BaseModel):
     communities: list[CommunitySummary]
 

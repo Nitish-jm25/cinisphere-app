@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.db.sql import get_db_session
 from app.models.social_models import Community, CommunityMembership, CommunityPost, Post, User
 from app.schemas.social_schema import (
+    CommunityCreateRequest,
     CommunityListResponse,
     CommunityMemberItem,
     CommunityMembersResponse,
@@ -73,6 +74,37 @@ def list_communities(
             )
             for c in communities
         ]
+    )
+
+
+@router.post("", response_model=CommunitySummary)
+def create_community(
+    payload: CommunityCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db_session),
+):
+    name = payload.name.strip()
+    description = payload.description.strip()
+    image_url = payload.image_url.strip() if payload.image_url else None
+
+    existing = db.query(Community).filter(func.lower(Community.name) == name.lower()).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Community already exists")
+
+    community = Community(name=name, description=description, image_url=image_url)
+    db.add(community)
+    db.flush()
+    db.add(CommunityMembership(community_id=community.id, user_id=current_user.id))
+    db.commit()
+    db.refresh(community)
+
+    return CommunitySummary(
+        id=community.id,
+        name=community.name,
+        description=community.description,
+        image_url=community.image_url,
+        member_count=1,
+        joined=True,
     )
 
 

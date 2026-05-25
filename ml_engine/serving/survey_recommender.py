@@ -159,7 +159,17 @@ def run_survey() -> dict:
 def normalise_genres(val) -> str:
     """Convert genres field (list or string) to lowercase string."""
     if isinstance(val, list):
-        return " ".join(str(g).lower() for g in val)
+        parts = []
+        for item in val:
+            if isinstance(item, dict):
+                name = str(item.get("name", "")).strip().lower()
+                if name:
+                    parts.append(name)
+            else:
+                token = str(item).strip().lower()
+                if token:
+                    parts.append(token)
+        return " ".join(parts)
     if isinstance(val, str):
         return val.lower().replace(",", " ")
     return ""

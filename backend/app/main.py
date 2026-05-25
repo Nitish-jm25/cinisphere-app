@@ -20,7 +20,7 @@ from app.api.routes.users import router as users_router
 from app.core import dependencies
 from app.core.config import settings
 from app.db.sql import SessionLocal, init_db
-from app.services.seed_service import seed_social_data
+from app.services.seed_service import ensure_default_communities, seed_social_data
 
 app = FastAPI(title="CINESPHERE API")
 
@@ -81,6 +81,7 @@ def startup_event():
     init_db()
     db = SessionLocal()
     try:
+        ensure_default_communities(db)
         if settings.SOCIAL_SEED_ENABLED:
             seed_social_data(db)
     finally:

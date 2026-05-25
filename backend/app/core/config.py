@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     TMDB_TIMEOUT_SECONDS: int = 3
     TMDB_MAX_RETRIES: int = 1
     TMDB_RETRY_BASE_DELAY_SECONDS: float = 0.25
+    MONGO_ENSURE_INDEXES: bool = False
 
     SQLALCHEMY_DATABASE_URI: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/cinisphere"
     JWT_SECRET_KEY: str = "change-this-in-production"

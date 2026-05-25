@@ -11,6 +11,8 @@ import { resolvePostImages } from '../utils/postImages';
 import { useDebounce } from '../hooks/useDebounce';
 
 const COMMUNITY_TOPICS: Record<string, string[]> = {
+  Movies: ['Reviews', 'Watchlists', 'Recommendations'],
+  WebSeries: ['Streaming', 'Episodes', 'Binge'],
   Anime: ['Anime', 'Visuals', 'Soundtracks'],
   Underrated: ['Hidden Gems', 'Cult', 'Underrated'],
   IndieCinema: ['Indie', 'Festival', 'Directors'],

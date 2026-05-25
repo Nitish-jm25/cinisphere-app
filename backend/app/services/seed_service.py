@@ -40,6 +40,8 @@ SEED_USERS = [
 SEED_DOMAIN = "seed.example.com"
 
 COMMUNITIES = [
+    ("Movies", "General movie discussions, reviews, and recommendations.", "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?q=80&w=500&auto=format&fit=crop"),
+    ("WebSeries", "Binge-worthy series, streaming picks, and episode talk.", "https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?q=80&w=500&auto=format&fit=crop"),
     ("Anime", "Anime films, series, and visual storytelling.", "https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=500&auto=format&fit=crop"),
     ("Underrated", "Hidden gems and overlooked masterpieces.", "https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=500&auto=format&fit=crop"),
     ("IndieCinema", "Independent films and festival picks.", "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?q=80&w=500&auto=format&fit=crop"),
@@ -89,6 +91,18 @@ POST_IMAGES = [
 
 def _hash_seed_password() -> str:
     return bcrypt.hashpw(b"password123", bcrypt.gensalt()).decode("utf-8")
+
+
+def ensure_default_communities(db: Session) -> None:
+    for name, desc, image in COMMUNITIES:
+        row = db.query(Community).filter(Community.name == name).first()
+        if row:
+            row.description = desc
+            row.image_url = image
+            db.add(row)
+            continue
+        db.add(Community(name=name, description=desc, image_url=image))
+    db.commit()
 
 
 def seed_social_data(db: Session) -> None:
