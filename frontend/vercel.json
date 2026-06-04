@@ -1,9 +1,4 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "env": {
-    "VITE_SOCIAL_API_BASE_URL": "@vite_social_api_base_url"
-  },
   "rewrites": [
     {
       "source": "/(.*)",
