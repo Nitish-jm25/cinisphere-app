@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 sys.path.append(str(BASE_DIR))
@@ -73,10 +74,28 @@ uploads_dir = Path(__file__).resolve().parents[1] / "uploads"
 uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
+# Serve frontend dist files
+frontend_dist = BASE_DIR / "frontend" / "dist"
+if frontend_dist.exists():
+    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
 
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+# Catch-all route to serve index.html for SPA routing
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    """Serve index.html for all non-API routes to enable SPA routing"""
+    # Don't intercept API routes or actual files
+    if full_path.startswith("api/") or full_path.startswith("uploads/") or full_path.startswith("assets/"):
+        raise FileNotFoundError
+    
+    index_file = frontend_dist / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    
+    raise FileNotFoundError
 
 
 @app.on_event("startup")

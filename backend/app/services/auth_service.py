@@ -163,13 +163,11 @@ def sign_in(
             user_agent=user_agent,
         )
 
-        profile = user_manager.get_user_profile(str(user_doc["_id"]))
-
         return {
             "user_id": str(user_doc["_id"]),
             "name": user_doc.get("name", ""),
             "email": user_doc.get("email", ""),
-            "has_profile": profile is not None,
+            "has_profile": True,
         }
     finally:
         client.close()
