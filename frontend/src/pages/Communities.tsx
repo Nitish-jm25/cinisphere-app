@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { MessageSquare, Users, Send, UserPlus, RefreshCcw, Search } from 'lucide-react';
+import { MessageSquare, Users, Send, UserPlus, RefreshCcw, Search, Loader2, Trash2, Share2, Pencil } from 'lucide-react';
 
 import { Button } from '../components/ui/Button';
 import { Avatar } from '../components/ui/Avatar';
@@ -8,8 +8,12 @@ import { FeedPost, type Post } from '../components/community/FeedPost';
 import { socialApi, type CommunityMember, type CommunityMessage, type CommunitySummary, type SocialPost, type SocialUser } from '../services/socialApi';
 import { tmdbService } from '../services/tmdb';
 import { resolvePostImages } from '../utils/postImages';
+import { timeAgo } from '../utils/time';
+import { useDebounce } from '../hooks/useDebounce';
 
 const COMMUNITY_TOPICS: Record<string, string[]> = {
+  Movies: ['Reviews', 'Watchlists', 'Recommendations'],
+  WebSeries: ['Streaming', 'Episodes', 'Binge'],
   Anime: ['Anime', 'Visuals', 'Soundtracks'],
   Underrated: ['Hidden Gems', 'Cult', 'Underrated'],
   IndieCinema: ['Indie', 'Festival', 'Directors'],
@@ -23,16 +27,6 @@ const displayName = (username: string) =>
     .filter(Boolean)
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
     .join(' ');
-
-const timeAgo = (createdAt: string): string => {
-  const date = new Date(createdAt).getTime();
-  const now = Date.now();
-  const diff = Math.floor((now - date) / 1000);
-  if (diff < 60) return 'now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-  return `${Math.floor(diff / 86400)}d`;
-};
 
 const mapPost = (p: SocialPost): Post => {
   const images = resolvePostImages(p.id, p.image_url, p.image_urls);
@@ -51,6 +45,7 @@ const mapPost = (p: SocialPost): Post => {
     comments: p.comments_count,
     timeAgo: timeAgo(p.created_at),
     isLikedByMe: p.is_liked,
+    isSavedByMe: p.is_saved,
   };
 };
 
@@ -82,11 +77,18 @@ export const Communities = () => {
   const [movieQuery, setMovieQuery] = useState('');
   const [movieResults, setMovieResults] = useState<any[]>([]);
   const [selectedMovie, setSelectedMovie] = useState<any | null>(null);
+  const [isSearchingMovie, setIsSearchingMovie] = useState(false);
+  const debouncedMovieQuery = useDebounce(movieQuery, 500);
 
   const [isCreatingCommunity, setIsCreatingCommunity] = useState(false);
   const [newCommunityName, setNewCommunityName] = useState('');
   const [newCommunityDesc, setNewCommunityDesc] = useState('');
   const [createCommunityLoading, setCreateCommunityLoading] = useState(false);
+  const currentUserId = localStorage.getItem('current_user_id');
+  const [isEditingCommunity, setIsEditingCommunity] = useState(false);
+  const [editCommunityName, setEditCommunityName] = useState('');
+  const [editCommunityDesc, setEditCommunityDesc] = useState('');
+  const [editCommunityLoading, setEditCommunityLoading] = useState(false);
 
   const selectedCommunity = useMemo(
     () => communities.find((c) => c.id === selectedCommunityId) || null,
@@ -207,13 +209,29 @@ export const Communities = () => {
   };
 
   const handleSearchMovie = async () => {
-    if (!movieQuery.trim()) {
+    const q = movieQuery.trim();
+    if (!q) {
       setMovieResults([]);
       return;
     }
-    const res = await tmdbService.searchMovies(movieQuery.trim());
-    setMovieResults(res.results.slice(0, 6));
+    setIsSearchingMovie(true);
+    try {
+      const res = await tmdbService.searchMovies(q);
+      setMovieResults(res.results.slice(0, 6));
+    } catch (e) {
+      console.error('Movie search error:', e);
+    } finally {
+      setIsSearchingMovie(false);
+    }
   };
+
+  useEffect(() => {
+    if (debouncedMovieQuery.trim()) {
+      handleSearchMovie();
+    } else {
+      setMovieResults([]);
+    }
+  }, [debouncedMovieQuery]);
 
   const handleCreateCommunityPost = async () => {
     if (!selectedCommunityId || !postCaption.trim()) return;
@@ -245,6 +263,67 @@ export const Communities = () => {
   const handleLoadComments = async (postId: string) => {
     const rows = await socialApi.getComments(Number(postId));
     return rows.map((c) => ({ id: String(c.id), username: c.author.username, text: c.content }));
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    await socialApi.deletePost(Number(postId));
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  };
+
+  const handleEditPost = async (postId: string, caption: string) => {
+    const updated = await socialApi.updatePost(Number(postId), caption);
+    setPosts((prev) => prev.map((p) => (p.id === postId ? mapPost(updated) : p)));
+  };
+
+  const handleSaveToggle = async (postId: string, currentlySaved: boolean) => {
+    if (currentlySaved) await socialApi.unsavePost(Number(postId));
+    else await socialApi.savePost(Number(postId));
+    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, isSavedByMe: !currentlySaved } : p)));
+  };
+
+  const handleDeleteCommunity = async () => {
+    if (!selectedCommunity) return;
+    const confirmed = window.confirm(`Delete "${selectedCommunity.name}"? Community chat and links will be removed.`);
+    if (!confirmed) return;
+    await socialApi.deleteCommunity(selectedCommunity.id);
+    setCommunities((prev) => prev.filter((c) => c.id !== selectedCommunity.id));
+    setSelectedCommunityId(null);
+    setMembers([]);
+    setPosts([]);
+    setMessages([]);
+    navigate('/community');
+  };
+
+  const handleShareCommunity = async () => {
+    if (!selectedCommunity) return;
+    const url = `${window.location.origin}/community/${selectedCommunity.id}`;
+    await navigator.clipboard?.writeText(url);
+    alert('Community link copied');
+  };
+
+  const openEditCommunity = () => {
+    if (!selectedCommunity) return;
+    setEditCommunityName(selectedCommunity.name);
+    setEditCommunityDesc(selectedCommunity.description || '');
+    setIsEditingCommunity(true);
+  };
+
+  const handleUpdateCommunity = async () => {
+    if (!selectedCommunity || !editCommunityName.trim()) return;
+    setEditCommunityLoading(true);
+    try {
+      const updated = await socialApi.updateCommunity(selectedCommunity.id, {
+        name: editCommunityName.trim(),
+        description: editCommunityDesc.trim(),
+      });
+      setCommunities((prev) => prev.map((c) => (c.id === updated.id ? updated : c)).sort((a, b) => a.name.localeCompare(b.name)));
+      setIsEditingCommunity(false);
+      navigate(`/community/${updated.id}`);
+    } catch (error) {
+      alert((error as Error).message || 'Failed to update community');
+    } finally {
+      setEditCommunityLoading(false);
+    }
   };
 
   const refreshAll = async () => {
@@ -335,11 +414,38 @@ export const Communities = () => {
                   ))}
                 </div>
               )}
+              {selectedCommunity && (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" className="border-white/20" onClick={handleShareCommunity}>
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Copy Link
+                  </Button>
+                  {selectedCommunity.can_manage && (
+                    <Button variant="outline" size="sm" className="border-white/20" onClick={openEditCommunity}>
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                  )}
+                  {selectedCommunity.can_manage && (
+                    <Button variant="outline" size="sm" className="border-red-500/30 text-red-300 hover:bg-red-500/10" onClick={handleDeleteCommunity}>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Community
+                    </Button>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <input className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 mb-2" placeholder="Search movie" value={movieQuery} onChange={(e) => setMovieQuery(e.target.value)} />
-                  <Button size="sm" onClick={handleSearchMovie}>Search Movie</Button>
+                  <div className="relative mb-2">
+                    <input className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 pr-10" placeholder="Search movie" value={movieQuery} onChange={(e) => setMovieQuery(e.target.value)} />
+                    {isSearchingMovie && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      </div>
+                    )}
+                  </div>
+                  <Button size="sm" onClick={handleSearchMovie} disabled={isSearchingMovie}>Search Movie</Button>
                   {movieResults.length > 0 && (
                     <div className="mt-2 max-h-32 overflow-auto border border-white/10 rounded">
                       {movieResults.map((m) => (
@@ -362,7 +468,18 @@ export const Communities = () => {
 
             <section className="space-y-4">
               {posts.map((p) => (
-                <FeedPost key={p.id} post={p} onLikeToggle={handleLikeToggle} onAddComment={handleAddComment} onLoadComments={handleLoadComments} />
+                <FeedPost
+                  key={p.id}
+                  post={p}
+                  onLikeToggle={handleLikeToggle}
+                  onAddComment={handleAddComment}
+                  onLoadComments={handleLoadComments}
+                  canDelete={currentUserId === p.user.id}
+                  canEdit={currentUserId === p.user.id}
+                  onDeletePost={handleDeletePost}
+                  onEditPost={handleEditPost}
+                  onSaveToggle={handleSaveToggle}
+                />
               ))}
               {posts.length === 0 && <p className="text-sm text-secondary-foreground">No community posts yet.</p>}
             </section>
@@ -452,6 +569,42 @@ export const Communities = () => {
                 <Button variant="outline" onClick={() => setIsCreatingCommunity(false)}>Cancel</Button>
                 <Button onClick={handleCreateCommunity} disabled={!newCommunityName.trim() || createCommunityLoading}>
                   {createCommunityLoading ? 'Creating...' : 'Create Community'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {isEditingCommunity && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsEditingCommunity(false)} />
+          <div className="relative w-full max-w-md bg-secondary/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 fade-in duration-300">
+            <h3 className="text-xl font-bold mb-4">Edit Community</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-semibold text-gray-300 block mb-1">Name</label>
+                <input
+                  type="text"
+                  className="w-full bg-background/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  value={editCommunityName}
+                  onChange={(e) => setEditCommunityName(e.target.value)}
+                  maxLength={50}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-gray-300 block mb-1">Description</label>
+                <textarea
+                  className="w-full bg-background/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  rows={3}
+                  value={editCommunityDesc}
+                  onChange={(e) => setEditCommunityDesc(e.target.value)}
+                  maxLength={300}
+                />
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <Button variant="outline" onClick={() => setIsEditingCommunity(false)}>Cancel</Button>
+                <Button onClick={handleUpdateCommunity} disabled={!editCommunityName.trim() || editCommunityLoading}>
+                  {editCommunityLoading ? 'Saving...' : 'Save Changes'}
                 </Button>
               </div>
             </div>

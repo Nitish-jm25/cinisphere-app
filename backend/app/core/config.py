@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     TMDB_TIMEOUT_SECONDS: int = 3
     TMDB_MAX_RETRIES: int = 1
     TMDB_RETRY_BASE_DELAY_SECONDS: float = 0.25
+    MONGO_ENSURE_INDEXES: bool = False
 
     SQLALCHEMY_DATABASE_URI: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/cinisphere"
     JWT_SECRET_KEY: str = "change-this-in-production"
@@ -22,6 +23,7 @@ class Settings(BaseSettings):
     SOCIAL_SEED_ENABLED: bool = False
     SOCIAL_HIDE_SEED_USERS: bool = True
     FRONTEND_BASE_URL: str = "http://localhost:5173"
+    BACKEND_CORS_ORIGINS: str = ""
     EMAIL_VERIFICATION_EXPIRE_MINUTES: int = 60 * 24
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
 

@@ -8,9 +8,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.sql import get_db_session
 from app.models.social_models import User
-from app.services.ml_service import MLService
 
-ml_service: MLService | None = None
+ml_service = None
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")

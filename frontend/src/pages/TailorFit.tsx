@@ -14,8 +14,9 @@ import {
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { useAuth } from '../context/AuthContext';
+import { withApiPath } from '../services/apiBase';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '');
+const API_BASE_URL = withApiPath(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api');
 
 type Mood = 'Happy' | 'Sad' | 'Excited' | 'Relaxed' | 'Romantic';
 

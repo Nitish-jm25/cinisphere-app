@@ -9,7 +9,9 @@ movies_collection = get_movies_collection()
 def generate_recommendations(user_text: str, top_k: int = 20) -> list[dict]:
     try:
         if dependencies.ml_service is None:
-            raise HTTPException(status_code=503, detail="ML service not initialized")
+            from app.services.ml_service import MLService
+
+            dependencies.ml_service = MLService()
 
         diversified_ids = dependencies.ml_service.recommend(
             user_text=user_text,

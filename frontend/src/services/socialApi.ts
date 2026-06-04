@@ -38,6 +38,7 @@ export interface SocialPost {
   likes_count: number;
   comments_count: number;
   is_liked: boolean;
+  is_saved: boolean;
   author: {
     id: number;
     username: string;
@@ -77,6 +78,7 @@ export interface CommunitySummary {
   image_url: string | null;
   member_count: number;
   joined: boolean;
+  can_manage?: boolean;
 }
 
 export interface CommunityMember {
@@ -93,6 +95,38 @@ export interface CommunityMessage {
   username: string;
   avatar_url: string | null;
   message: string;
+}
+
+export interface DirectMessage {
+  id: number;
+  sender_id: number;
+  recipient_id: number;
+  created_at: string;
+  read_at: string | null;
+  message: string;
+}
+
+export interface DirectConversation {
+  user: {
+    id: number;
+    username: string;
+    avatar_url: string | null;
+  };
+  last_message: DirectMessage;
+  unread_count: number;
+}
+
+export interface MovieListItem {
+  id: number;
+  movie_id: number;
+  title: string;
+  poster_path: string | null;
+  release_date: string | null;
+  status: 'watchlist' | 'watched';
+  rating: number | null;
+  notes: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface NotificationItem {
@@ -344,6 +378,29 @@ export const socialApi = {
     });
   },
 
+  async updatePost(postId: number, caption: string) {
+    return apiFetch<SocialPost>(`/posts/${postId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ caption }),
+    });
+  },
+
+  async savePost(postId: number) {
+    return apiFetch<{ success: boolean; message: string }>(`/posts/${postId}/save`, {
+      method: 'POST',
+    });
+  },
+
+  async unsavePost(postId: number) {
+    return apiFetch<{ success: boolean; message: string }>(`/posts/${postId}/save`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getSavedPosts(limit = 20, offset = 0) {
+    return apiFetch<SocialPost[]>(`/posts/saved?limit=${limit}&offset=${offset}`);
+  },
+
   async getFeed(limit = 20, offset = 0) {
     return apiFetch<SocialPost[]>(`/posts/feed?limit=${limit}&offset=${offset}`);
   },
@@ -386,6 +443,13 @@ export const socialApi = {
     });
   },
 
+  async updateCommunity(communityId: number, payload: { name?: string; description?: string; image_url?: string | null }) {
+    return apiFetch<CommunitySummary>(`/communities/${communityId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async joinCommunity(communityId: number) {
     return apiFetch<{ success: boolean; message: string }>(`/communities/${communityId}/join`, {
       method: 'POST',
@@ -394,6 +458,12 @@ export const socialApi = {
 
   async leaveCommunity(communityId: number) {
     return apiFetch<{ success: boolean; message: string }>(`/communities/${communityId}/leave`, {
+      method: 'DELETE',
+    });
+  },
+
+  async deleteCommunity(communityId: number) {
+    return apiFetch<{ success: boolean }>(`/communities/${communityId}`, {
       method: 'DELETE',
     });
   },
@@ -421,6 +491,53 @@ export const socialApi = {
     return apiFetch<CommunityMessage>(`/chat/communities/${communityId}/messages`, {
       method: 'POST',
       body: JSON.stringify({ message }),
+    });
+  },
+
+  async getDirectConversations() {
+    return apiFetch<DirectConversation[]>('/chat/direct/conversations');
+  },
+
+  async getDirectMessages(userId: number) {
+    return apiFetch<DirectMessage[]>(`/chat/direct/${userId}`);
+  },
+
+  async sendDirectMessage(userId: number, message: string) {
+    return apiFetch<DirectMessage>(`/chat/direct/${userId}`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  async getMovieList(status: 'all' | 'watchlist' | 'watched' = 'all') {
+    return apiFetch<MovieListItem[]>(`/movie-list?status=${status}`);
+  },
+
+  async saveMovieListItem(payload: {
+    movie_id: number;
+    title: string;
+    poster_path?: string | null;
+    release_date?: string | null;
+    status: 'watchlist' | 'watched';
+    rating?: number | null;
+    notes?: string;
+  }) {
+    return apiFetch<MovieListItem>('/movie-list', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateMovieListItem(itemId: number, payload: { status?: 'watchlist' | 'watched'; rating?: number | null; notes?: string }) {
+    return apiFetch<MovieListItem>(`/movie-list/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteMovieListItem(itemId: number) {
+    return apiFetch<{ success: boolean }>(`/movie-list/${itemId}`, {
+      method: 'DELETE',
     });
   },
 

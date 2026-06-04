@@ -55,5 +55,5 @@ def ensure_indexes():
         print(f"[WARN] Index creation skipped or failed: {e}")
 
 
-# Create indexes on module import (runs once at server startup)
-ensure_indexes()
+if settings.MONGO_ENSURE_INDEXES:
+    ensure_indexes()

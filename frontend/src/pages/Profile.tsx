@@ -3,7 +3,7 @@ import { Navigate, useParams } from 'react-router-dom';
 import {
     Settings, Edit3, Activity,
     Users, Bookmark, Calendar,
-    MapPin, Share2, LogOut, UserX, ShieldAlert, X
+    MapPin, Share2, LogOut, UserX, ShieldAlert, X, MessageCircle
 } from 'lucide-react';
 
 import { Button } from '../components/ui/Button';
@@ -15,17 +15,10 @@ import { socialApi, type CommunitySummary, type SocialUser } from '../services/s
 import { useAuth } from '../context/AuthContext';
 import { resolvePostImages } from '../utils/postImages';
 import { shareUrl } from '../utils/share';
+import { timeAgo } from '../utils/time';
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=2000&auto=format&fit=crop';
 const DEFAULT_COMMUNITY_IMAGE = 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=500&auto=format&fit=crop';
-
-const timeAgo = (createdAt: string): string => {
-    const diff = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
-    if (diff < 60) return 'now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
-};
 
 const mapToFollowRow = (u: SocialUser): User => ({
     id: String(u.id),
@@ -41,7 +34,7 @@ const mapToFollowRow = (u: SocialUser): User => ({
 export const Profile = () => {
     const { user: authUser, logout } = useAuth();
     const { username: routeUsername } = useParams();
-    const [activeTab, setActiveTab] = useState<'saved' | 'activity' | 'communities'>('saved');
+    const [activeTab, setActiveTab] = useState<'gallery' | 'activity' | 'saved' | 'communities'>('gallery');
     const [communities, setCommunities] = useState<CommunitySummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [avatarUploading, setAvatarUploading] = useState(false);
@@ -52,6 +45,7 @@ export const Profile = () => {
 
     const [profile, setProfile] = useState<any>(null);
     const [activityPosts, setActivityPosts] = useState<Post[]>([]);
+    const [savedPosts, setSavedPosts] = useState<Post[]>([]);
     const [followersList, setFollowersList] = useState<User[]>([]);
     const [followingList, setFollowingList] = useState<User[]>([]);
     const [connectionsModal, setConnectionsModal] = useState<'followers' | 'following' | null>(null);
@@ -66,6 +60,27 @@ export const Profile = () => {
         .filter((img): img is string => Boolean(img));
     const joinedCommunities = communities.filter((community) => community.joined);
 
+    const mapSocialPost = (p: any): Post => {
+        const images = resolvePostImages(p.id, p.image_url, p.image_urls);
+        return {
+            id: String(p.id),
+            user: {
+                id: String(p.author.id),
+                name: p.author.username,
+                handle: p.author.username,
+                avatar: p.author.avatar_url || '',
+            },
+            imageUrl: images[0],
+            imageUrls: images,
+            content: p.caption,
+            likes: p.likes_count,
+            comments: p.comments_count,
+            timeAgo: timeAgo(p.created_at),
+            isLikedByMe: p.is_liked,
+            isSavedByMe: p.is_saved,
+        };
+    };
+
     useEffect(() => {
         const loadData = async () => {
             if (!usernameToLoad) return;
@@ -74,9 +89,10 @@ export const Profile = () => {
                 const profileData = await socialApi.getUserProfile(usernameToLoad);
                 setProfile(profileData);
 
-                const [communitiesRes, postsRes, followersRes, followingRes] = await Promise.allSettled([
+                const [communitiesRes, postsRes, savedRes, followersRes, followingRes] = await Promise.allSettled([
                     socialApi.listCommunities(),
                     socialApi.getUserPosts(profileData.user.id, 20, 0),
+                    isOwnProfile ? socialApi.getSavedPosts(30, 0) : Promise.resolve([]),
                     socialApi.getUserFollowers(usernameToLoad),
                     socialApi.getUserFollowing(usernameToLoad),
                 ]);
@@ -98,25 +114,12 @@ export const Profile = () => {
                 );
                 setActivityPosts(
                     postsRes.status === 'fulfilled'
-                        ? postsRes.value.map((p) => {
-                            const images = resolvePostImages(p.id, p.image_url, p.image_urls);
-                            return {
-                                id: String(p.id),
-                                user: {
-                                    id: String(p.author.id),
-                                    name: p.author.username,
-                                    handle: p.author.username,
-                                    avatar: p.author.avatar_url || '',
-                                },
-                                imageUrl: images[0],
-                                imageUrls: images,
-                                content: p.caption,
-                                likes: p.likes_count,
-                                comments: p.comments_count,
-                                timeAgo: timeAgo(p.created_at),
-                                isLikedByMe: p.is_liked,
-                            };
-                        })
+                        ? postsRes.value.map(mapSocialPost)
+                        : []
+                );
+                setSavedPosts(
+                    savedRes.status === 'fulfilled'
+                        ? savedRes.value.map(mapSocialPost)
                         : []
                 );
             } catch {
@@ -245,6 +248,26 @@ export const Profile = () => {
     const handleDeletePost = async (postId: string) => {
         await socialApi.deletePost(Number(postId));
         setActivityPosts((prev) => prev.filter((p) => p.id !== postId));
+        setSavedPosts((prev) => prev.filter((p) => p.id !== postId));
+    };
+
+    const handleEditPost = async (postId: string, caption: string) => {
+        const updated = await socialApi.updatePost(Number(postId), caption);
+        const mapped = mapSocialPost(updated);
+        setActivityPosts((prev) => prev.map((p) => (p.id === postId ? mapped : p)));
+        setSavedPosts((prev) => prev.map((p) => (p.id === postId ? mapped : p)));
+    };
+
+    const handleSaveToggle = async (postId: string, currentlySaved: boolean) => {
+        if (currentlySaved) await socialApi.unsavePost(Number(postId));
+        else await socialApi.savePost(Number(postId));
+        setActivityPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, isSavedByMe: !currentlySaved } : p)));
+        if (currentlySaved) {
+            setSavedPosts((prev) => prev.filter((p) => p.id !== postId));
+        } else {
+            const found = activityPosts.find((p) => p.id === postId);
+            if (found) setSavedPosts((prev) => [{ ...found, isSavedByMe: true }, ...prev]);
+        }
     };
 
     const handleShareProfile = async () => {
@@ -428,6 +451,20 @@ export const Profile = () => {
                                 <Button className="w-full md:w-auto gap-2" onClick={handleFollowToggle}>
                                     {profile.is_following ? 'Unfollow' : 'Follow'}
                                 </Button>
+                                <Button
+                                    variant="outline"
+                                    className="w-full md:w-auto gap-2 border-white/20 text-white hover:bg-white/10"
+                                    onClick={() => {
+                                        const params = new URLSearchParams({
+                                            user: String(profile.user.id),
+                                            username: profile.user.username,
+                                        });
+                                        if (profile.user.avatar_url) params.set('avatar', profile.user.avatar_url);
+                                        window.location.href = `/messages?${params.toString()}`;
+                                    }}
+                                >
+                                    <MessageCircle className="w-4 h-4" /> Message
+                                </Button>
                                 <Button variant="outline" className="w-full md:w-auto gap-2 border-white/20 text-white hover:bg-white/10" onClick={handleReportUser}>
                                     <ShieldAlert className="w-4 h-4" /> Report
                                 </Button>
@@ -475,13 +512,16 @@ export const Profile = () => {
                 </div>
 
                 <div className="flex items-center gap-8 border-b border-white/10 mb-8">
-                    <button onClick={() => setActiveTab('saved')} className={cn('pb-4 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2', activeTab === 'saved' ? 'border-primary text-white' : 'border-transparent text-secondary-foreground hover:text-white')}><Bookmark className="w-4 h-4" /> Gallery</button>
+                    <button onClick={() => setActiveTab('gallery')} className={cn('pb-4 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2', activeTab === 'gallery' ? 'border-primary text-white' : 'border-transparent text-secondary-foreground hover:text-white')}><Bookmark className="w-4 h-4" /> Gallery</button>
                     <button onClick={() => setActiveTab('activity')} className={cn('pb-4 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2', activeTab === 'activity' ? 'border-primary text-white' : 'border-transparent text-secondary-foreground hover:text-white')}><Activity className="w-4 h-4" /> Activity</button>
+                    {isOwnProfile && (
+                        <button onClick={() => setActiveTab('saved')} className={cn('pb-4 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2', activeTab === 'saved' ? 'border-primary text-white' : 'border-transparent text-secondary-foreground hover:text-white')}><Bookmark className="w-4 h-4" /> Saved</button>
+                    )}
                     <button onClick={() => setActiveTab('communities')} className={cn('pb-4 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2', activeTab === 'communities' ? 'border-primary text-white' : 'border-transparent text-secondary-foreground hover:text-white')}><Users className="w-4 h-4" /> Communities</button>
                 </div>
 
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 min-h-[400px]">
-                    {activeTab === 'saved' && (
+                    {activeTab === 'gallery' && (
                         <div className="space-y-6">
                             <div className="flex justify-between items-center">
                                 <h3 className="font-bold text-lg">Recent Images ({galleryImages.length})</h3>
@@ -522,7 +562,36 @@ export const Profile = () => {
                                         onAddComment={handleAddComment}
                                         onLoadComments={handleLoadComments}
                                         canDelete={isOwnProfile}
+                                        canEdit={isOwnProfile}
                                         onDeletePost={handleDeletePost}
+                                        onEditPost={handleEditPost}
+                                        onSaveToggle={handleSaveToggle}
+                                    />
+                                ))
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'saved' && isOwnProfile && (
+                        <div className="max-w-2xl mx-auto space-y-6">
+                            <h3 className="font-bold text-lg flex items-center gap-2 mb-6">Saved Posts</h3>
+                            {savedPosts.length === 0 ? (
+                                <div className="text-center py-10">
+                                    <p className="text-secondary-foreground mb-4">No saved posts yet.</p>
+                                </div>
+                            ) : (
+                                savedPosts.map((p) => (
+                                    <FeedPost
+                                        key={p.id}
+                                        post={p}
+                                        onLikeToggle={handleLikeToggle}
+                                        onAddComment={handleAddComment}
+                                        onLoadComments={handleLoadComments}
+                                        canDelete={p.user.id === String(authUser?.id)}
+                                        canEdit={p.user.id === String(authUser?.id)}
+                                        onDeletePost={handleDeletePost}
+                                        onEditPost={handleEditPost}
+                                        onSaveToggle={handleSaveToggle}
                                     />
                                 ))
                             )}

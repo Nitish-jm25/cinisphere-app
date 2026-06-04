@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Heart, MessageCircle, Share2, Bookmark, MoreHorizontal, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Heart, MessageCircle, Share2, Bookmark, MoreHorizontal, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { Button } from '../ui/Button';
@@ -43,9 +43,12 @@ interface FeedPostProps {
     onLoadComments?: (postId: string) => Promise<PostComment[]>;
     canDelete?: boolean;
     onDeletePost?: (postId: string) => Promise<void> | void;
+    canEdit?: boolean;
+    onEditPost?: (postId: string, caption: string) => Promise<void> | void;
+    onSaveToggle?: (postId: string, currentlySaved: boolean) => Promise<void> | void;
 }
 
-export const FeedPost = React.memo(({ post, className, style, onLikeToggle, onAddComment, onLoadComments, canDelete = false, onDeletePost }: FeedPostProps) => {
+export const FeedPost = React.memo(({ post, className, style, onLikeToggle, onAddComment, onLoadComments, canDelete = false, onDeletePost, canEdit = false, onEditPost, onSaveToggle }: FeedPostProps) => {
     const navigate = useNavigate();
     const [liked, setLiked] = useState(post.isLikedByMe || false);
     const [saved, setSaved] = useState(post.isSavedByMe || false);
@@ -57,9 +60,21 @@ export const FeedPost = React.memo(({ post, className, style, onLikeToggle, onAd
     const [currentImage, setCurrentImage] = useState(0);
     const [menuOpen, setMenuOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [editing, setEditing] = useState(false);
+    const [editText, setEditText] = useState(post.content);
+    const [savingEdit, setSavingEdit] = useState(false);
     const [imageLoaded, setImageLoaded] = useState(false);
 
     const images = useMemo(() => (post.imageUrls && post.imageUrls.length ? post.imageUrls : [post.imageUrl]), [post.imageUrl, post.imageUrls]);
+    const captionParts = useMemo(() => post.content.split(/(#[a-zA-Z0-9_]+)/g), [post.content]);
+
+    useEffect(() => {
+        setLiked(post.isLikedByMe || false);
+        setSaved(post.isSavedByMe || false);
+        setLikeCount(post.likes);
+        setCommentCount(post.comments);
+        setEditText(post.content);
+    }, [post.comments, post.content, post.isLikedByMe, post.isSavedByMe, post.likes]);
 
     useEffect(() => {
         let mounted = true;
@@ -120,6 +135,31 @@ export const FeedPost = React.memo(({ post, className, style, onLikeToggle, onAd
         }
     };
 
+    const handleSaveToggle = async () => {
+        const nextSaved = !saved;
+        setSaved(nextSaved);
+        try {
+            await onSaveToggle?.(post.id, saved);
+        } catch (error) {
+            setSaved(saved);
+            alert((error as Error).message || 'Failed to update saved post');
+        }
+    };
+
+    const handleEdit = async () => {
+        if (!onEditPost || !editText.trim()) return;
+        setSavingEdit(true);
+        try {
+            await onEditPost(post.id, editText.trim());
+            setEditing(false);
+            setMenuOpen(false);
+        } catch (error) {
+            alert((error as Error).message || 'Failed to edit post');
+        } finally {
+            setSavingEdit(false);
+        }
+    };
+
     const handleShare = async () => {
         const url = `${window.location.origin}/feed?post=${post.id}`;
         await shareUrl(`${post.user.name}'s post`, post.content.slice(0, 120), url);
@@ -139,7 +179,7 @@ export const FeedPost = React.memo(({ post, className, style, onLikeToggle, onAd
                         <p className="text-xs text-secondary-foreground">@{post.user.handle} - {post.timeAgo}</p>
                     </button>
                 </div>
-                {canDelete && (
+                {(canDelete || canEdit) && (
                     <div className="relative">
                         <Button
                             variant="ghost"
@@ -151,14 +191,30 @@ export const FeedPost = React.memo(({ post, className, style, onLikeToggle, onAd
                         </Button>
                         {menuOpen && (
                             <div className="absolute right-0 mt-2 w-40 rounded-lg border border-white/10 bg-[#111] shadow-xl z-20 overflow-hidden">
+                                {canEdit && (
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/10"
+                                        onClick={() => {
+                                            setEditing(true);
+                                            setMenuOpen(false);
+                                        }}
+                                    >
+                                        <Pencil className="w-4 h-4" />
+                                        Edit caption
+                                    </button>
+                                )}
+                                {canDelete && (
                                 <button
                                     type="button"
-                                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 disabled:opacity-60"
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-white/10 disabled:opacity-60"
                                     onClick={handleDelete}
                                     disabled={deleting}
                                 >
+                                    <Trash2 className="w-4 h-4" />
                                     {deleting ? 'Deleting...' : 'Delete post'}
                                 </button>
+                                )}
                             </div>
                         )}
                     </div>
@@ -201,7 +257,35 @@ export const FeedPost = React.memo(({ post, className, style, onLikeToggle, onAd
             </div>
 
             <div className="px-4 py-4">
-                <p className="text-sm md:text-base text-gray-200 leading-relaxed whitespace-pre-wrap">{post.content}</p>
+                {editing ? (
+                    <div className="space-y-3">
+                        <textarea
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            rows={4}
+                            maxLength={2200}
+                            className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        />
+                        <div className="flex justify-end gap-2">
+                            <Button size="sm" variant="outline" onClick={() => { setEditing(false); setEditText(post.content); }}>Cancel</Button>
+                            <Button size="sm" onClick={handleEdit} disabled={!editText.trim() || savingEdit}>
+                                {savingEdit ? 'Saving...' : 'Save'}
+                            </Button>
+                        </div>
+                    </div>
+                ) : (
+                    <p className="text-sm md:text-base text-gray-200 leading-relaxed whitespace-pre-wrap">
+                        {captionParts.map((part, index) =>
+                            part.startsWith('#') ? (
+                                <span key={`${part}-${index}`} className="font-semibold text-primary">
+                                    {part}
+                                </span>
+                            ) : (
+                                <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
+                            )
+                        )}
+                    </p>
+                )}
             </div>
 
             <div className="px-4 py-3 border-t border-white/10 flex items-center justify-between">
@@ -221,7 +305,7 @@ export const FeedPost = React.memo(({ post, className, style, onLikeToggle, onAd
                     </button>
                 </div>
 
-                <button onClick={() => setSaved(!saved)} className="text-secondary-foreground hover:text-white transition-all group">
+                <button onClick={handleSaveToggle} className="text-secondary-foreground hover:text-white transition-all group" title={saved ? 'Remove from saved' : 'Save post'}>
                     <Bookmark className={cn('w-6 h-6 transition-transform group-hover:scale-110', saved && 'text-white fill-white')} />
                 </button>
             </div>

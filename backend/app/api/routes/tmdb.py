@@ -1,12 +1,11 @@
 import json
 import random
+import re
 import socket
 import time
 from datetime import date
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import ProxyHandler, build_opener
 
+import requests
 from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import settings
@@ -17,7 +16,7 @@ TMDB_BASE_URL = "https://api.themoviedb.org/3"
 RETRYABLE_HTTP_STATUS_CODES = {429, 500, 502, 503, 504}
 TMDB_CACHE_TTL_SECONDS = 300
 _tmdb_response_cache: dict[str, tuple[float, dict]] = {}
-_tmdb_opener = build_opener(ProxyHandler({}))
+_tmdb_session = requests.Session()
 _movies_collection = get_movies_collection()
 _GENRE_NAME_TO_ID = {
     "action": 28,
@@ -65,6 +64,17 @@ _MINDSET_TO_GENRE_IDS = {
     "laugh": {35, 10751},            # Comedy, Family
     "action": {28, 53, 12},          # Action, Thriller, Adventure
 }
+
+_EXPLICIT_KEYWORDS = ["sex", "erotic", "porn", "xxx", "sensual", "seducing", "seduction", "lust", "desire", "affair", "cheating", "adultery", "18+"]
+
+def _get_safety_filters() -> list[dict]:
+    # Common filters to exclude low-rated and potentially explicit content
+    filters = [
+        {"vote_average": {"$gte": 6.0}},
+        {"title": {"$not": {"$regex": "|".join(_EXPLICIT_KEYWORDS), "$options": "i"}}},
+        {"overview": {"$not": {"$regex": "|".join(_EXPLICIT_KEYWORDS), "$options": "i"}}}
+    ]
+    return filters
 
 
 def _extract_genre_ids(genres_raw) -> list[int]:
@@ -151,7 +161,7 @@ def _mongo_list(query: dict, sort_fields: list[tuple[str, int]], page: int = 1, 
             query or {},
             {"title": {"$nin": [None, ""]}},
             {"poster_path": {"$nin": [None, "", "/vite.svg"]}},
-        ]
+        ] + _get_safety_filters()
     }
     pool_size = max(per_page * 5, 80)
     docs = list(_movies_collection.find(base_query, {"_id": 0}).sort(sort_fields).limit(pool_size))
@@ -170,7 +180,7 @@ def _mongo_search(query: str, page: int = 1, per_page: int = 20) -> dict:
                 "$and": [
                     {"title": regex},
                     {"poster_path": {"$nin": [None, "", "/vite.svg"]}},
-                ]
+                ] + _get_safety_filters()
             },
             {"_id": 0},
         )
@@ -242,26 +252,48 @@ def _mongo_movie_credits(movie_id: int) -> dict:
     if not doc:
         return {"id": movie_id, "cast": [], "crew": []}
 
-    cast = _parse_people_list(doc.get("cast") or doc.get("actors") or doc.get("top_cast"))
-    crew_source = doc.get("crew")
-    if not crew_source:
-        crew_bits = []
-        for field_name, job in (
-            ("director", "Director"),
-            ("directors", "Director"),
-            ("writer", "Writer"),
-            ("writers", "Writer"),
-            ("screenplay", "Screenplay"),
-            ("producer", "Producer"),
-            ("producers", "Producer"),
-        ):
-            raw = doc.get(field_name)
-            for item in _parse_people_list(raw):
-                item["job"] = item["job"] or job
-                crew_bits.append(item)
-        crew = crew_bits
+    cast = []
+    crew = []
+
+    credits_raw = doc.get("credits")
+    if isinstance(credits_raw, str) and credits_raw.strip():
+        for part in credits_raw.split("|-|"):
+            part = part.strip()
+            if not part:
+                continue
+            name = part
+            character = ""
+            if "-" in part:
+                name, character = part.split("-", 1)
+            cast.append({
+                "id": len(cast) + 1,
+                "name": name.strip(),
+                "character": character.strip(),
+                "job": "Actor",
+                "department": "Acting",
+                "profile_path": None,
+            })
     else:
-        crew = _parse_people_list(crew_source)
+        cast = _parse_people_list(doc.get("cast") or doc.get("actors") or doc.get("top_cast"))
+        crew_source = doc.get("crew")
+        if not crew_source:
+            crew_bits = []
+            for field_name, job in (
+                ("director", "Director"),
+                ("directors", "Director"),
+                ("writer", "Writer"),
+                ("writers", "Writer"),
+                ("screenplay", "Screenplay"),
+                ("producer", "Producer"),
+                ("producers", "Producer"),
+            ):
+                raw = doc.get(field_name)
+                for item in _parse_people_list(raw):
+                    item["job"] = item["job"] or job
+                    crew_bits.append(item)
+            crew = crew_bits
+        else:
+            crew = _parse_people_list(crew_source)
 
     return {"id": movie_id, "cast": cast, "crew": crew}
 
@@ -292,14 +324,29 @@ def _mongo_mood_picks(
     per_page: int = 20,
 ) -> dict:
     query: dict = {
-        "title": {"$nin": [None, ""]},
-        "poster_path": {"$nin": [None, "", "/vite.svg"]},
-        "vote_average": {"$gte": 6.8},
-        "vote_count": {"$gte": 80},
+        "$and": [
+            {
+                "title": {"$nin": [None, ""]},
+                "poster_path": {"$nin": [None, "", "/vite.svg"]},
+                "vote_count": {"$gte": 10},
+            }
+        ] + _get_safety_filters()
     }
     lang = (language or "").strip().lower()
     if lang:
-        query["original_language"] = lang
+        query["$and"][0]["original_language"] = lang
+
+    desired_genres = _parse_genre_ids(genres_csv, mood, mindset)
+    if desired_genres:
+        _id_to_names = {}
+        for name, gid in _GENRE_NAME_TO_ID.items():
+            _id_to_names.setdefault(gid, []).append(name)
+        desired_names = []
+        for gid in desired_genres:
+            for name in _id_to_names.get(gid, []):
+                desired_names.append(re.compile(f"^{re.escape(name)}$", re.IGNORECASE))
+        if desired_names:
+            query["genres"] = {"$in": desired_names}
 
     pool = list(
         _movies_collection.find(query, {"_id": 0})
@@ -307,14 +354,13 @@ def _mongo_mood_picks(
         .limit(600)
     )
     if not pool and lang:
-        query.pop("original_language", None)
+        query["$and"][0].pop("original_language", None)
         pool = list(
             _movies_collection.find(query, {"_id": 0})
             .sort([("vote_average", -1), ("vote_count", -1), ("popularity", -1)])
             .limit(600)
         )
 
-    desired_genres = _parse_genre_ids(genres_csv, mood, mindset)
     scored: list[tuple[float, dict]] = []
     for doc in pool:
         item = _to_tmdb_result(doc)
@@ -370,30 +416,39 @@ def _tmdb_get(path: str, params: dict | None = None):
     if params:
         query.update(params)
 
-    url = f"{TMDB_BASE_URL}{path}?{urlencode(query)}"
+    url = f"{TMDB_BASE_URL}{path}"
     cache_key = _cache_key(path, params)
     max_retries = max(settings.TMDB_MAX_RETRIES, 1)
     timeout_sec = max(settings.TMDB_TIMEOUT_SECONDS, 1)
-    base_delay = max(settings.TMDB_RETRY_BASE_DELAY_SECONDS, 0.1)
+    base_delay = max(settings.TMDB_RETRY_BASE_DELAY_SECONDS, 0.25)
     last_error: Exception | None = None
 
     for attempt in range(1, max_retries + 1):
         try:
-            with _tmdb_opener.open(url, timeout=timeout_sec) as response:
-                payload = response.read().decode("utf-8")
-                parsed = json.loads(payload)
+            response = _tmdb_session.get(url, params=query, timeout=timeout_sec)
+            if response.status_code == 200:
+                parsed = response.json()
                 _set_cached_response(cache_key, parsed)
                 return parsed
-        except HTTPError as exc:
-            detail = exc.read().decode("utf-8") if exc.fp else str(exc)
-            if exc.code in RETRYABLE_HTTP_STATUS_CODES and attempt < max_retries:
+            
+            if response.status_code in RETRYABLE_HTTP_STATUS_CODES and attempt < max_retries:
                 time.sleep(base_delay * (2 ** (attempt - 1)))
                 continue
+            
+            # Non-retryable error or last attempt
             cached_payload = _get_cached_response(cache_key)
             if cached_payload is not None:
                 return cached_payload
-            raise HTTPException(status_code=exc.code, detail=detail)
-        except (URLError, TimeoutError, socket.timeout) as exc:
+            
+            detail = "Request failed"
+            try:
+                detail = response.json().get("status_message", detail)
+            except:
+                detail = response.text or detail
+            
+            raise HTTPException(status_code=response.status_code, detail=detail)
+
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
             last_error = exc
             if attempt < max_retries:
                 time.sleep(base_delay * (2 ** (attempt - 1)))
@@ -405,11 +460,6 @@ def _tmdb_get(path: str, params: dict | None = None):
                 status_code=504,
                 detail="TMDB request timed out or network is unreachable",
             )
-        except json.JSONDecodeError as exc:
-            cached_payload = _get_cached_response(cache_key)
-            if cached_payload is not None:
-                return cached_payload
-            raise HTTPException(status_code=502, detail=f"Invalid TMDB response format: {exc}")
         except Exception as exc:
             last_error = exc
             if attempt < max_retries:
@@ -419,10 +469,6 @@ def _tmdb_get(path: str, params: dict | None = None):
             if cached_payload is not None:
                 return cached_payload
             raise HTTPException(status_code=502, detail=f"TMDB request failed: {exc}")
-
-    cached_payload = _get_cached_response(cache_key)
-    if cached_payload is not None:
-        return cached_payload
 
     raise HTTPException(
         status_code=502,
@@ -531,8 +577,7 @@ def discover_tamil(page: int = Query(default=1, ge=1, le=500)):
             pass
     return _mongo_list(
         {
-            "original_language": {"$regex": "^(ta|tamil)$", "$options": "i"},
-            "vote_average": {"$gte": 5.0},
+            "original_language": {"$in": ["ta", "tamil"]},
             "vote_count": {"$gte": 10},
         },
         [("vote_average", -1), ("vote_count", -1), ("popularity", -1), ("release_date", -1)],

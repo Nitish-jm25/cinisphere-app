@@ -14,6 +14,8 @@ const Discover = lazy(() => import('./pages/Discover').then(module => ({ default
 const MovieDetail = lazy(() => import('./pages/MovieDetail').then(module => ({ default: module.MovieDetail })));
 const CommunityFeed = lazy(() => import('./pages/CommunityFeed').then(module => ({ default: module.CommunityFeed })));
 const Communities = lazy(() => import('./pages/Communities').then(module => ({ default: module.Communities })));
+const Messages = lazy(() => import('./pages/Messages').then(module => ({ default: module.Messages })));
+const MovieList = lazy(() => import('./pages/MovieList').then(module => ({ default: module.MovieList })));
 const Profile = lazy(() => import('./pages/Profile').then(module => ({ default: module.Profile })));
 const ResetPassword = lazy(() => import('./pages/ResetPassword').then(module => ({ default: module.ResetPassword })));
 const TailorFit = lazy(() => import('./pages/TailorFit').then(module => ({ default: module.TailorFit })));
@@ -23,6 +25,7 @@ const PageLoader = () => (
     <Loader2 className="w-8 h-8 md:w-12 md:h-12 text-primary animate-spin" />
   </div>
 );
+// trigger deployment
 
 function App() {
   return (
@@ -44,6 +47,8 @@ function App() {
                   <Route path="/feed" element={<CommunityFeed />} />
                   <Route path="/community" element={<Communities />} />
                   <Route path="/community/:communityId" element={<Communities />} />
+                  <Route path="/watchlist" element={<MovieList />} />
+                  <Route path="/messages" element={<Messages />} />
                   <Route path="/profile" element={<Profile />} />
                   <Route path="/profile/:username" element={<Profile />} />
                 </Route>

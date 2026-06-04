@@ -4,12 +4,14 @@ import { FeedPost, type Post } from '../components/community/FeedPost';
 import { Avatar } from '../components/ui/Avatar';
 import { Button } from '../components/ui/Button';
 import { Skeleton } from '../components/ui/Skeleton';
-import { PenSquare, Users, UserPlus, X, Upload, RefreshCcw, Flame, Clock3 } from 'lucide-react';
+import { PenSquare, Users, UserPlus, X, Upload, RefreshCcw, Flame, Clock3, Loader2 } from 'lucide-react';
+import { useDebounce } from '../hooks/useDebounce';
 
 import { dataService, type User } from '../services/mockData';
 import { socialApi, type CommunitySummary, type SocialPost } from '../services/socialApi';
 import { tmdbService, type Movie } from '../services/tmdb';
 import { resolvePostImages } from '../utils/postImages';
+import { timeAgo } from '../utils/time';
 import { useAuth } from '../context/AuthContext';
 
 const DEFAULT_COMMUNITY_IMAGE = 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=500&auto=format&fit=crop';
@@ -30,16 +32,6 @@ const displayName = (username: string) =>
         .filter(Boolean)
         .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
         .join(' ');
-
-const timeAgo = (createdAt: string): string => {
-    const date = new Date(createdAt).getTime();
-    const now = Date.now();
-    const diff = Math.floor((now - date) / 1000);
-    if (diff < 60) return 'now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
-};
 
 const toPosterUrl = (posterPath?: string | null) => {
     if (!posterPath) return '';
@@ -63,6 +55,7 @@ const mapPost = (p: SocialPost): Post => {
         comments: p.comments_count,
         timeAgo: timeAgo(p.created_at),
         isLikedByMe: p.is_liked,
+        isSavedByMe: p.is_saved,
     };
 };
 
@@ -81,6 +74,8 @@ export const CommunityFeed = () => {
     const [movieResults, setMovieResults] = useState<Movie[]>([]);
     const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
     const [caption, setCaption] = useState('');
+    const [isSearchingMovie, setIsSearchingMovie] = useState(false);
+    const debouncedMovieQuery = useDebounce(movieQuery, 500);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
@@ -113,17 +108,30 @@ export const CommunityFeed = () => {
     }, []);
 
     const searchMovies = async () => {
-        if (!movieQuery.trim()) {
+        const q = movieQuery.trim();
+        if (!q) {
             setMovieResults([]);
             return;
         }
+        setIsSearchingMovie(true);
         try {
-            const response = await tmdbService.searchMovies(movieQuery.trim());
+            const response = await tmdbService.searchMovies(q);
             setMovieResults(response.results.slice(0, 8));
-        } catch {
+        } catch (error) {
+            console.error('Movie search error:', error);
             setMovieResults([]);
+        } finally {
+            setIsSearchingMovie(false);
         }
     };
+
+    useEffect(() => {
+        if (debouncedMovieQuery.trim()) {
+            searchMovies();
+        } else {
+            setMovieResults([]);
+        }
+    }, [debouncedMovieQuery]);
 
     const handleFilesSelected = (files: FileList | null) => {
         if (!files) return;
@@ -199,6 +207,17 @@ export const CommunityFeed = () => {
         setPosts((prev) => prev.filter((p) => p.id !== postId));
     };
 
+    const handleEditPost = async (postId: string, caption: string) => {
+        const updated = await socialApi.updatePost(Number(postId), caption);
+        setPosts((prev) => prev.map((p) => (p.id === postId ? mapPost(updated) : p)));
+    };
+
+    const handleSaveToggle = async (postId: string, currentlySaved: boolean) => {
+        if (currentlySaved) await socialApi.unsavePost(Number(postId));
+        else await socialApi.savePost(Number(postId));
+        setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, isSavedByMe: !currentlySaved } : p)));
+    };
+
     const handleFollow = async (userId: string) => {
         if (!authUser?.id || followBusyId) return;
         setFollowBusyId(userId);
@@ -239,9 +258,14 @@ export const CommunityFeed = () => {
 
                         <div className="space-y-2">
                             <label className="text-sm text-gray-300">Select movie (poster auto-used if no upload)</label>
-                            <div className="flex gap-2">
-                                <input value={movieQuery} onChange={(e) => setMovieQuery(e.target.value)} placeholder="Search movie title" className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2" />
-                                <Button onClick={searchMovies}>Search</Button>
+                            <div className="flex gap-2 relative">
+                                <input value={movieQuery} onChange={(e) => setMovieQuery(e.target.value)} placeholder="Search movie title" className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 pr-10" />
+                                {isSearchingMovie && (
+                                    <div className="absolute right-[110px] top-1/2 -translate-y-1/2">
+                                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                                    </div>
+                                )}
+                                <Button onClick={searchMovies} disabled={isSearchingMovie}>Search</Button>
                             </div>
                             {selectedMovie && (
                                 <div className="text-xs text-green-400 flex items-center gap-2">
@@ -371,7 +395,10 @@ export const CommunityFeed = () => {
                                         onAddComment={handleAddComment}
                                         onLoadComments={handleLoadComments}
                                         canDelete={authUser?.username === post.user.handle}
+                                        canEdit={authUser?.username === post.user.handle}
                                         onDeletePost={handleDeletePost}
+                                        onEditPost={handleEditPost}
+                                        onSaveToggle={handleSaveToggle}
                                         className="animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-both"
                                         style={{ animationDelay: `${idx * 100}ms` }}
                                     />

@@ -44,7 +44,29 @@ LANGUAGE_CODE_MAP = {
     "spanish": "es",
 }
 
-MAX_TAILOR_FIT_CANDIDATES = 50000
+MAX_TAILOR_FIT_CANDIDATES = 8000
+TAILOR_FIT_PROJECTION = {
+    "_id": 0,
+    "movie_id": 1,
+    "tmdb_id": 1,
+    "title": 1,
+    "overview": 1,
+    "poster_path": 1,
+    "release_date": 1,
+    "genres": 1,
+    "original_language": 1,
+    "vote_average": 1,
+    "vote_count": 1,
+    "popularity": 1,
+}
+GENRE_ALIASES = {
+    "sci-fi": {"science fiction", "sci-fi", "scifi"},
+    "scifi": {"science fiction", "sci-fi", "scifi"},
+    "movie": set(),
+}
+MOOD_EXCLUDE_KEYWORDS = {
+    "feel good": {"devotional", "religious", "god", "temple", "ayyappan", "ayyappa", "mythology"},
+}
 
 
 def _movies_collection():
@@ -57,6 +79,8 @@ def normalize_survey_dict(survey: dict[str, Any]) -> dict[str, Any]:
     language_raw = str(survey.get("language", "")).strip().lower()
     language = LANGUAGE_CODE_MAP.get(language_raw, language_raw)
     movie_type = str(survey.get("movie_type", "")).strip().lower()
+    if movie_type == "sci-fi":
+        movie_type = "science fiction"
     release_pref = str(survey.get("release_pref", "any")).strip().lower() or "any"
     release_period = str(survey.get("release_period", "any")).strip().lower() or "any"
 
@@ -83,17 +107,17 @@ def _load_movies_df(survey_data: dict[str, Any] | None = None, limit: int = MAX_
 
     movies = list(
         _movies_collection()
-        .find(query, {"_id": 0})
+        .find(query, TAILOR_FIT_PROJECTION)
         .sort([("popularity", -1), ("vote_count", -1), ("vote_average", -1)])
-        .limit(max(limit, 5000))
+        .limit(limit)
     )
     if not movies and lang:
         query.pop("original_language", None)
         movies = list(
             _movies_collection()
-            .find(query, {"_id": 0})
+            .find(query, TAILOR_FIT_PROJECTION)
             .sort([("popularity", -1), ("vote_count", -1), ("vote_average", -1)])
-            .limit(max(limit, 5000))
+            .limit(limit)
         )
     if not movies:
         raise HTTPException(status_code=400, detail="No movies found in DB. Run ingestion first.")
@@ -217,6 +241,41 @@ def _extract_genre_tokens(raw_genres: Any) -> set[str]:
     return tokens
 
 
+def _wanted_genre_tokens(survey_data: dict[str, Any]) -> set[str]:
+    wanted: set[str] = set()
+    for genre in survey_data.get("genres", []):
+        key = str(genre).strip().lower()
+        if not key:
+            continue
+        wanted.update(GENRE_ALIASES.get(key, {key}))
+    return wanted
+
+
+def _apply_genre_filter(df: pd.DataFrame, survey_data: dict[str, Any], min_results: int) -> pd.DataFrame:
+    wanted = _wanted_genre_tokens(survey_data)
+    if not wanted or "any" in wanted:
+        return df
+
+    genre_tokens = df["genres"].apply(_extract_genre_tokens) if "genres" in df.columns else pd.Series([set()] * len(df), index=df.index)
+    strict = df[genre_tokens.apply(lambda tokens: bool(tokens.intersection(wanted)))]
+    return strict if len(strict) >= min_results else df
+
+
+def _apply_mood_safety_filter(df: pd.DataFrame, survey_data: dict[str, Any], min_results: int) -> pd.DataFrame:
+    excluded = MOOD_EXCLUDE_KEYWORDS.get(str(survey_data.get("mood", "")).lower(), set())
+    if not excluded:
+        return df
+
+    def is_excluded(row: pd.Series) -> bool:
+        title = str(row.get("title", "")).lower()
+        overview = str(row.get("overview", "")).lower()
+        haystack = f"{title} {overview}"
+        return any(token in haystack for token in excluded)
+
+    filtered = df[~df.apply(is_excluded, axis=1)]
+    return filtered if len(filtered) >= min_results else df
+
+
 def _load_recently_shown(user_id: str, days: int = 14) -> set[int]:
     col = _recommendation_state_collection()
     doc = col.find_one({"user_id": str(user_id)}, {"_id": 0, "shown": 1})
@@ -335,6 +394,8 @@ def recommend_tailor_fit(
     survey_data = normalize_survey_dict(survey)
     df = _load_movies_df(survey_data=survey_data)
     df = _apply_release_period_filter(df, survey_data.get("release_period", "any"))
+    df = _apply_genre_filter(df, survey_data, min_results=max(top_k * 4, 30))
+    df = _apply_mood_safety_filter(df, survey_data, min_results=max(top_k * 4, 30))
 
     # Larger candidate pool to allow collaborative reranking.
     candidate_k = max(top_k * 8, 120)
@@ -388,6 +449,8 @@ def recommend_tailor_fit(
     if not filtered_recs_df.empty:
         recs_df = filtered_recs_df
 
+    recs_df = _apply_genre_filter(recs_df, survey_data, min_results=top_k)
+    recs_df = _apply_mood_safety_filter(recs_df, survey_data, min_results=top_k)
     recs_df = _apply_quality_gate(recs_df, top_k=top_k)
 
     recs_df["survey_score"] = _normalize_series(recs_df["similarity_score"].astype(float))
